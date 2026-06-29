@@ -1,110 +1,114 @@
-# eurotransit: service integration contract
+# eurotransit: service integration contract & payloads (v2)
 
-this document shows the data structures used for communication between the services in the architecture, for both the synchronous (rest) and asynchronous (kafka) parts.
+this document defines the data structures and interaction patterns for the eurotransit architecture. the system uses an event-driven choreography via kafka for the critical order pipeline.
 
-## 1. synchronous path: "the money path" (rest)
+## 1. synchronous entrypoint
 
-this is the critical path. calls here need circuit breakers and idempotency keys, so retries don't cause double charges or double reservations.
+the only synchronous step in the checkout flow is the initial order submission.
 
-### 1.1 orders → inventory (reservation)
-
-inventory is the resource everyone is fighting for, so we need a clear consistency model to avoid overselling seats.
-
-- method & path: `POST /api/v1/inventory/reserve`
-- caller: orders
-- target: inventory
+- method & path: `POST /api/v1/orders`
+- target: orders service
+- behavior: validates the request, generates an internal `order_id`, publishes to kafka, and immediately returns a 202 status.
 
 request payload:
 
 ```json
 {
-  "order_id": "string",
-  "idempotency_key": "uuid",
+  "frontend_idempotency_key": "uuid",
+  "user_id": "string",
   "train_id": "string",
   "seat_class": "string",
-  "quantity": 1
-}
-```
-
-response (200 ok):
-
-```json
-{
-  "status": "RESERVED",
-  "reservation_id": "string"
-}
-```
-
-### 1.2 orders → payments (authorization)
-
-payment authorization also needs a synchronous call with strict idempotency, to avoid charging the user twice.
-
-- method & path: `POST /api/v1/payments/authorize`
-- caller: orders
-- target: payments
-
-request payload:
-
-```json
-{
-  "order_id": "string",
-  "idempotency_key": "uuid",
-  "user_id": "string",
+  "quantity": 1,
   "amount": 45.50,
   "currency": "EUR"
 }
 ```
 
-response (200 ok):
+response (202 accepted):
 
 ```json
 {
-  "status": "AUTHORIZED",
-  "transaction_id": "string"
+  "status": "PENDING",
+  "order_id": "ord-98765"
 }
 ```
 
-## 2. asynchronous path (kafka / strimzi)
+## 2. asynchronous order pipeline (kafka)
 
-kafka is used here for the order pipeline and for events in general. this allows graceful degradation: for example, if notifications fails completely, the checkout still works fine.
+once the order is accepted, it goes through kafka-driven stages using kotlin flows. every message must include an `event_id` for deduplication.
 
-### 2.1 topic: `eurotransit.orders.confirmed`
-
-sent when the checkout workflow finishes successfully.
+### 2.1 topic: `eurotransit.order-placed`
 
 - producer: orders
-- consumer: notifications (sends confirmation emails)
+- consumer: inventory
 
-message payload:
-
-```json
-{
-  "event_id": "uuid",
-  "timestamp": "2026-06-28T11:40:00Z",
-  "order_id": "string",
-  "customer_email": "string",
-  "payment_transaction_id": "string",
-  "ticket_details": {
-    "train_id": "string",
-    "departure": "2026-07-15T08:00:00Z",
-    "seat_reserved": true
-  }
-}
-```
-
-### 2.2 topic: `eurotransit.orders.failed` (optional / compensation)
-
-sent to trigger compensating actions when something fails in the middle of the async pipeline (e.g. a timeout right after a reservation was made).
-
-message payload:
+payload:
 
 ```json
 {
-  "event_id": "uuid",
-  "timestamp": "2026-06-28T11:42:00Z",
-  "order_id": "string",
-  "reason": "string",
-  "failed_step": "string",
-  "compensation_required": true
+  "event_id": "evt-111",
+  "order_id": "ord-98765",
+  "train_id": "string",
+  "quantity": 1
 }
 ```
+
+### 2.2 topic: `eurotransit.inventory-reserved`
+
+- producer: inventory
+- consumer: payments
+
+payload:
+
+```json
+{
+  "event_id": "evt-222",
+  "order_id": "ord-98765",
+  "user_id": "string",
+  "amount": 45.50
+}
+```
+
+### 2.3 topic: `eurotransit.payment-authorized`
+
+- producer: payments
+- consumer: orders (updates db status to confirmed)
+
+payload:
+
+```json
+{
+  "event_id": "evt-333",
+  "order_id": "ord-98765",
+  "transaction_id": "txn-555"
+}
+```
+
+### 2.4 topic: `eurotransit.order-confirmed`
+
+- producer: orders
+- consumer: notifications (graceful degradation: can fail without affecting checkout)
+
+payload:
+
+```json
+{
+  "event_id": "evt-444",
+  "order_id": "ord-98765",
+  "user_email": "user@example.com"
+}
+```
+
+## 3. consistency & idempotency patterns
+
+to handle kafka's at-least-once delivery and partial failures, all services must implement the following:
+
+- inventory consistency (pacelc): strong consistency (pc/ec). the postgresql database is the single source of truth for the contended resource, to avoid overselling.
+- idempotency (`processed_events` table): every service database must have a `processed_events` table. when a kafka consumer receives a message, it checks if the `event_id` already exists. if it does, the event is skipped. if not, the service runs its business logic and inserts the `event_id` into the table, in the same database transaction.
+
+## 4. service level objectives (slos)
+
+the critical "money path" is monitored with red dashboards and the following slos:
+
+- latency slo: 99% of checkout workflows (from `POST /orders` to `payment-authorized` completion) finish in under 800ms over a 5-minute rolling window.
+- success rate slo: 99.5% of `POST /orders` requests return a non-5xx response over a 5-minute rolling window.
