@@ -104,42 +104,9 @@ Response `200`:
 
 Possible statuses: `PENDING` → `RESERVED` → `CONFIRMED` | `FAILED`
 
-### 1.4 Payments — authorize (internal, called by Orders sync)
+### 1.4 Payments
 
-Not exposed via Traefik. Called by Orders from within the async pipeline (inside a Kafka consumer). This is the call wrapped by the **circuit breaker**.
-
-- `POST /api/v1/payments/authorize`
-
-Request:
-
-```json
-{
-  "idempotency_key": "ord-98765",
-  "user_id": "user-42",
-  "amount": 45.50,
-  "currency": "EUR"
-}
-```
-
-Response `200`:
-
-```json
-{
-  "transaction_id": "txn-555",
-  "status": "AUTHORIZED"
-}
-```
-
-Response `402`:
-
-```json
-{
-  "status": "DECLINED",
-  "reason": "insufficient_funds"
-}
-```
-
-Idempotency: Payments checks `idempotency_key` in its `processed_events` table. If already authorized, returns the existing transaction. Uses the `order_id` as the key since one order should produce exactly one payment.
+Payments has no exposed API and no synchronous inbound call from Orders. It is a pure Kafka consumer/producer — see topics 2.4-2.6. The only synchronous call left anywhere in the system is Payments' own outbound call to the external payment gateway, wrapped in a **circuit breaker** (open / half-open, fallback = publish `payment-failed`).
 
 ---
 
@@ -188,7 +155,7 @@ PENDING → RESERVED → CONFIRMED
 }
 ```
 
-On success: Orders updates order status to RESERVED, then calls Payments sync (see 1.4).
+On success: Orders updates order status to RESERVED, then publishes `payment-requested` (see 2.4).
 
 ### 2.3 Topic: `eurotransit.inventory-reservation-failed`
 
@@ -204,17 +171,71 @@ On success: Orders updates order status to RESERVED, then calls Payments sync (s
 }
 ```
 
-On receive: Orders updates order status to FAILED. No compensation needed (nothing was reserved).
+On receive: Orders updates order status to FAILED, publishes `order-failed`. No compensation needed (nothing was reserved).
 
-### 2.4 Topic: `eurotransit.order-confirmed`
+### 2.4 Topic: `eurotransit.payment-requested`
 
 - Producer: **Orders**
-- Consumer: **Notifications**
-- Trigger: after Orders receives a successful sync response from Payments
+- Consumer: **Payments**
+- Trigger: after Orders consumes `inventory-reserved`
 
 ```json
 {
-  "event_id": "evt-444",
+  "event_id": "evt-333",
+  "order_id": "ord-98765",
+  "user_id": "user-42",
+  "amount": 45.50,
+  "currency": "EUR"
+}
+```
+
+On receive: Payments checks `order_id` against its `processed_events` table (see §3.2 — same pattern as every other consumer). If new, it calls the external payment gateway inside a circuit breaker (open / half-open, fallback below), then publishes `payment-authorized` or `payment-failed`.
+
+### 2.5 Topic: `eurotransit.payment-authorized`
+
+- Producer: **Payments**
+- Consumer: **Orders**
+- Trigger: external gateway call succeeds
+
+```json
+{
+  "event_id": "evt-444a",
+  "order_id": "ord-98765",
+  "transaction_id": "txn-555",
+  "amount": 45.50,
+  "currency": "EUR"
+}
+```
+
+On receive: Orders updates order status to CONFIRMED, publishes `order-confirmed` (see 2.7).
+
+### 2.6 Topic: `eurotransit.payment-failed`
+
+- Producer: **Payments**
+- Consumer: **Orders**
+- Trigger: gateway declines the payment, **or** the circuit breaker is open and falls back without calling the gateway at all
+
+```json
+{
+  "event_id": "evt-444b",
+  "order_id": "ord-98765",
+  "reason": "insufficient_funds"
+}
+```
+
+Note: `reason` is `"insufficient_funds"` (or similar) for a real decline, or `"circuit_breaker_open"` when the fallback fires without reaching the gateway. Both cases are indistinguishable to the client (order still ends up FAILED) but distinguishable in dashboards/logs for diagnosing which failure mode is occurring.
+
+On receive: Orders updates order status to FAILED, publishes `order-failed` (see 2.8).
+
+### 2.7 Topic: `eurotransit.order-confirmed`
+
+- Producer: **Orders**
+- Consumer: **Notifications**
+- Trigger: after Orders consumes `payment-authorized`
+
+```json
+{
+  "event_id": "evt-555",
   "order_id": "ord-98765",
   "user_email": "user@example.com",
   "train_id": "TR-101",
@@ -227,15 +248,15 @@ On receive: Orders updates order status to FAILED. No compensation needed (nothi
 
 On receive: Notifications sends a confirmation email. **Graceful degradation**: if Notifications is down, the event stays in Kafka and will be processed when it recovers. The checkout is already complete.
 
-### 2.5 Topic: `eurotransit.order-failed`
+### 2.8 Topic: `eurotransit.order-failed`
 
 - Producer: **Orders**
 - Consumer: **Inventory** (compensation) + **Notifications** (failure email)
-- Trigger: Payments declines or circuit breaker opens
+- Trigger: Orders consumes `inventory-reservation-failed` **or** `payment-failed`
 
 ```json
 {
-  "event_id": "evt-555",
+  "event_id": "evt-666",
   "order_id": "ord-98765",
   "reservation_id": "res-777",
   "reason": "payment_declined",
@@ -243,7 +264,9 @@ On receive: Notifications sends a confirmation email. **Graceful degradation**: 
 }
 ```
 
-On receive by Inventory: releases the reservation (compensation). On receive by Notifications: sends a failure email to the user.
+Note: `reservation_id` is only present when the failure happened after a reservation existed (i.e. triggered by `payment-failed`, not by `inventory-reservation-failed`) — that's what tells Inventory whether there's anything to compensate.
+
+On receive by Inventory: if `reservation_id` is present, releases the reservation (compensation); otherwise ignores (nothing was reserved). On receive by Notifications: sends a failure email to the user.
 
 ---
 
@@ -303,6 +326,8 @@ This handles Kafka's at-least-once delivery: the same event arriving twice is ha
 
 **Error budget**: over 1000 orders in 5 minutes, up to 10 can exceed 800ms.
 
+**Open risk — needs load-test validation**: this target was set when payment authorization was a single synchronous HTTP call. The critical path is now 4 Kafka hops end-to-end (`order-placed`, `inventory-reserved`, `payment-requested`, `payment-authorized`), each adding producer/broker/consumer latency beyond a direct call. Keep 800ms as the target, but validate it under load once the pipeline is running, before wiring burn-rate alerts around it — if it's not achievable, revisit with real numbers rather than a guess. Tune consumer poll settings (e.g. low `fetch.min.bytes`/`linger.ms`) if the extra hops push latency over budget.
+
 ### 4.2 Gateway success rate SLO
 
 **Objective**: 99.5% of `POST /api/v1/orders` requests return non-5xx over a 5-minute rolling window.
@@ -325,34 +350,53 @@ All SLOs use **burn-rate alerting** (not threshold alerting). A fast burn (14.4�
 
 ## 5. Order flow summary
 
+The diagram below is column-verified: every arrow's start and end sit exactly under the two lifelines it connects (generated programmatically rather than hand-aligned, after an earlier hand-drawn version had a decline/circuit-breaker response visually drifting into the wrong column).
+
 ```
-Client                Orders              Inventory            Payments         Notifications
-  |                      |                    |                    |                  |
-  |-- POST /orders ----->|                    |                    |                  |
-  |<---- 202 PENDING ----|                    |                    |                  |
-  |                      |                    |                    |                  |
-  |                      |-- order-placed --->|                    |                  |
-  |                      |                    |-- reserve (SQL) -->|                  |
-  |                      |                    |                    |                  |
-  |              [success path]               |                    |                  |
-  |                      |<- inv-reserved ----|                    |                  |
-  |                      |                    |                    |                  |
-  |                      |--------- POST /authorize ------------->|                  |
-  |                      |<-------- 200 AUTHORIZED ---------------|                  |
-  |                      |                    |                    |                  |
-  |                      |-- order-confirmed ---------------------------------------->|
-  |                      |                    |                    |                  |
-  |-- GET /orders/id --->|                    |                    |                  |
-  |<---- CONFIRMED ------|                    |                    |                  |
-  |                                                                                  |
-  |              [failure: no seats]          |                    |                  |
-  |                      |<- inv-failed ------|                    |                  |
-  |                      |   (FAILED)         |                    |                  |
-  |                                                                                  |
-  |              [failure: payment declined]  |                    |                  |
-  |                      |--------- POST /authorize ------------->|                  |
-  |                      |<-------- 402 DECLINED -----------------|                  |
-  |                      |-- order-failed --->|                    |                  |
-  |                      |                    |-- release (SQL)    |                  |
-  |                      |-- order-failed ------------------------------------------------>|
+  Client               Orders                       Inventory                           Payments                           Payment Gateway        Notifications
+  |                      |                              |                                  |                                      |                     |
+  |----POST /orders----->|                              |                                  |                                      |                     |
+  |<-----202 PENDING-----|                              |                                  |                                      |                     |
+  |                      |                              |                                  |                                      |                     |
+  |                      |--------order-placed--------->|                                  |                                      |                     |
+  |                      |                              | [atomic reserve (SQL)]           |                                      |                     |
+  |                      |                              |                                  |                                      |                     |
+              [success path]
+  |                      |<-----inventory-reserved------|                                  |                                      |                     |
+  |                      |-----------------------payment-requested------------------------>|                                      |                     |
+  |                      |                              |                                  |--------------call (CB)-------------->|                     |
+  |                      |                              |                                  |<---------------200 OK----------------|                     |
+  |                      |<-----------------------payment-authorized-----------------------|                                      |                     |
+  |                      |-------------------------------------------------------order-confirmed------------------------------------------------------->|
+  |                      |                              |                                  |                                      |                     |
+  |---GET /orders/id---->|                              |                                  |                                      |                     |
+  |<------CONFIRMED------|                              |                                  |                                      |                     |
+  |                      |                              |                                  |                                      |                     |
+              [failure: no seats]
+  |                      |<---inv-reservation-failed----|                                  |                                      |                     |
+  |                      |--------order-failed--------->|                                  |                                      |                     |
+  |                      |                              | [no reservation, ignored]        |                                      |                     |
+  |                      |--------------------------------------------------------order-failed--------------------------------------------------------->|
+  |                      |                              |                                  |                                      |                     |
+              [failure: payment declined by gateway]
+  |                      |-----------------------payment-requested------------------------>|                                      |                     |
+  |                      |                              |                                  |--------------call (CB)-------------->|                     |
+  |                      |                              |                                  |<--------------declined---------------|                     |
+  |                      |<-------------------------payment-failed-------------------------|                                      |                     |
+  |                      |--------order-failed--------->|                                  |                                      |                     |
+  |                      |                              | [release reservation (SQL)]      |                                      |                     |
+  |                      |--------------------------------------------------------order-failed--------------------------------------------------------->|
+  |                      |                              |                                  |                                      |                     |
+              [failure: circuit breaker OPEN -- gateway is skipped entirely]
+  |                      |-----------------------payment-requested------------------------>|                                      |                     |
+  |                      |                              |                                  | [CB open: skip call, fallback now]   |                     |
+  |                      |<-------------------------payment-failed-------------------------|                                      |                     |
+  |                      |--------order-failed--------->|                                  |                                      |                     |
+  |                      |                              | [release reservation (SQL)]      |                                      |                     |
+  |                      |--------------------------------------------------------order-failed--------------------------------------------------------->|
 ```
+
+Notes:
+- The "Payment Gateway" lane is the external third-party payment processor Payments calls out to — not an API/ingress gateway (Traefik never appears in this diagram; it only fronts the two client-facing endpoints above).
+- The no-seats failure branch now notifies Notifications too, matching §2.8: `order-failed`'s consumers (Inventory + Notifications) are unconditional — every message on that topic reaches both, regardless of which upstream event triggered it.
+- The two payment-failure sub-cases are now drawn separately per §2.6: a real decline still calls the gateway and gets `declined` back; a circuit-breaker-open fallback never calls the gateway at all — Payments short-circuits straight to publishing `payment-failed`.
