@@ -3,7 +3,7 @@ namespace: eurotransit
 frontend:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/frontend
+    repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -13,7 +13,7 @@ frontend:
 catalog:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/catalog
+    repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -23,7 +23,7 @@ catalog:
 orders:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/orders
+    repository: lab02clusterregistry.azurecr.io/eurotransit/orders
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -33,7 +33,7 @@ orders:
 inventory:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/inventory
+    repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -43,7 +43,7 @@ inventory:
 payments:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/payments
+    repository: lab02clusterregistry.azurecr.io/eurotransit/payments
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -53,7 +53,7 @@ payments:
 notifications:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/notifications
+    repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
     tag: latest
     pullPolicy: IfNotPresent
   service:

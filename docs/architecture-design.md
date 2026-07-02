@@ -201,7 +201,7 @@ Developer pushes code
 │    1. ./gradlew build                                              │
 │    2. ./gradlew test                                               │
 │    3. docker build → tag with commit SHA                           │
-│    4. docker push → kaantryoutregistry.azurecr.io/eurotransit/XXX  │
+│    4. docker push → lab02clusterregistry.azurecr.io/eurotransit/XXX │
 │    5. git clone config repo                                        │
 │    6. update values.yaml with new image tag                        │
 │    7. git commit + push to config repo (main)                      │
