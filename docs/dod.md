@@ -8,6 +8,7 @@
 - [ ] Service decomposition documented with sync/async boundaries and justification for each
 - [ ] POST /api/v1/orders returns 202 PENDING immediately; pipeline proceeds via Kafka
 - [ ] 6 Kafka topics operational, all produced and mostly self-consumed by Orders across its four internal stages: order-placed, inventory-reserved, payment-authorized, payment-failed, order-confirmed, order-failed
+- [ ] Every Kafka event payload includes `event_id` for deduplication and `event_timestamp` as the UTC producer-created timestamp
 - [ ] Order pipeline uses Kotlin coroutines / Flows for async processing
 - [ ] Structured concurrency: each Kafka consumer runs in a CoroutineScope as a failure domain
 - [ ] Cooperative cancellation on SIGTERM: in-flight work finishes or is cleanly cancelled, no orphaned tasks, no double-processing

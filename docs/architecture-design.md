@@ -210,6 +210,9 @@ the actual processing work, which can run on a different replica, retry
 independently, and be load-shed under backpressure.
 ```
 
+Every Kafka event payload includes `event_id` for deduplication and
+`event_timestamp` as the UTC instant when the producer created the event payload.
+
 ### Order state machine
 
 ```
