@@ -22,8 +22,9 @@
                           │  Data layer:                                             │
                           │       Kafka (Strimzi)     ──  6 event topics, all owned  │
                           │                               and produced by Orders     │
-                          │       PostgreSQL (CNPG)   ──  3 clusters: orders-db,     │
-                          │                               inventory-db, payments-db  │
+                          │       PostgreSQL (CNPG)   ──  4 clusters: catalog-db,    │
+                          │                               orders-db, inventory-db,   │
+                          │                               payments-db                │
                           │                                                          │
                           │  Platform:                                               │
                           │       Argo CD         ──  GitOps delivery                 │
@@ -31,6 +32,7 @@
                           │       Grafana         ──  dashboards                      │
                           │       Chaos Mesh      ──  fault injection                 │
                           │       Sealed Secrets  ──  encrypted secrets in Git        │
+                          │       Keycloak        ──  OIDC provider (JWT issuer)      │
                           │                                                          │
                           └──────────────────────────────────────────────────────────┘
 ```
@@ -43,7 +45,7 @@ Each service is an independent Spring Boot (Kotlin) application with its own:
 - Docker image on ACR
 - Kubernetes Deployment + Service
 - ServiceMonitor (Prometheus scraping via /actuator/prometheus)
-- own CloudNativePG cluster and database — Orders, Inventory, and Payments only. Catalog is stateless/read-only and Notifications needs no durable dedup, so neither gets a CNPG cluster.
+- own CloudNativePG cluster and database — Catalog, Orders, Inventory, and Payments. Notifications needs no durable dedup, so it doesn't get a CNPG cluster.
 
 ### Service responsibilities
 
@@ -52,7 +54,8 @@ Each service is an independent Spring Boot (Kotlin) application with its own:
 │ Service        │ What it does                                              │
 ├────────────────┼────────────────────────────────────────────────────────────┤
 │ Catalog        │ GET /api/v1/catalog/products — lists trains + prices.     │
-│                │ Read-only, tolerant of staleness. No Kafka, no DB.        │
+│                │ Read-only, tolerant of staleness. No Kafka. Owns own      │
+│                │ CNPG cluster (catalog-db).                                │
 ├────────────────┼────────────────────────────────────────────────────────────┤
 │ Orders         │ POST /api/v1/orders — accepts order, returns 202 PENDING. │
 │                │ GET /api/v1/orders/{id} — polling for status.             │
@@ -168,7 +171,23 @@ Legend:
                    timeout/retry/circuit-breaker policy: Orders→Inventory,
                    Orders→Payments, and Payments→external gateway are three
                    separate edges, not one.
+  JWT            = every inbound client API call (POST /orders,
+                   GET /catalog/products) carries a Bearer JWT. Validation is
+                   distributed (pattern B): each service verifies the token
+                   locally via spring-boot-starter-oauth2-resource-server
+                   against Keycloak's JWKS endpoint — no gateway-side auth.
 ```
+
+### Authentication (Keycloak)
+
+Keycloak runs as a Pod in the `eurotransit` namespace and is the OIDC provider /
+JWT issuer for the system. Authentication follows **pattern B — distributed JWT
+validation**: there is no authentication step at the gateway. Instead, every
+Spring Boot service validates incoming Bearer tokens locally using
+`spring-boot-starter-oauth2-resource-server`, fetching Keycloak's public signing
+keys from its JWKS endpoint and caching them. A token issued by Keycloak is
+therefore accepted and verified independently by whichever service receives the
+request, with no per-request round trip back to Keycloak.
 
 ### Kafka topics
 
@@ -221,7 +240,7 @@ Pages:
 - Buy button (calls POST /api/v1/orders with idempotency_key)
 - Order status (polls GET /api/v1/orders/{id} until CONFIRMED or FAILED)
 
-The frontend is a thin client. No business logic, no auth, no state management beyond the current order. It runs in a container with nginx, served through Traefik at path `/`.
+The frontend is a thin client. No business logic, no state management beyond the current order. It authenticates users against Keycloak (OIDC) and attaches the resulting Bearer JWT to its API calls. It runs in a container with nginx, served through Traefik at path `/`.
 
 ## 4. CI pipeline (application repo)
 
@@ -351,6 +370,7 @@ eurotransit-configuration/
 │   ├── cert-manager/
 │   ├── cnpg/
 │   │   ├── operator-values.yaml
+│   │   ├── catalog-db-cluster.yaml
 │   │   ├── orders-db-cluster.yaml
 │   │   ├── inventory-db-cluster.yaml
 │   │   └── payments-db-cluster.yaml
@@ -391,9 +411,8 @@ eurotransit-configuration/
 
 ## 7. What is NOT needed
 
-- Authentication / JWT / OAuth — not in the capstone requirements
 - Real email sending — Notifications just logs
 - Complex frontend — a simple page with catalog, buy button, and status polling
 - API gateway software (Kong, etc.) — Traefik covers routing
-- Shared database across services — Orders, Inventory, and Payments each own a separate CloudNativePG cluster on purpose, so a DB failover or chaos experiment on one doesn't take the others down with it. No cross-service joins or shared schemas.
+- Shared database across services — Catalog, Orders, Inventory, and Payments each own a separate CloudNativePG cluster on purpose, so a DB failover or chaos experiment on one doesn't take the others down with it. No cross-service joins or shared schemas.
 - Staging environment — one namespace, one cluster

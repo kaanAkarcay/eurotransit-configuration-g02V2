@@ -1,7 +1,7 @@
 # EuroTransit — Definition of Done
 
 > This is a living document. Update it as the project evolves.
-> Last updated: YYYY-MM-DD
+> Last updated: 2026-07-08
 
 ## Pillar A: Distributed design and asynchronous execution
 
@@ -51,6 +51,13 @@
 - [ ] SLO: 99% of PENDING orders reach terminal state within 30s (pipeline completion)
 - [ ] Alerts based on burn-rate, not raw thresholds
 - [ ] Distributed tracing across the money path (request → Orders → Inventory/Payments → Kafka → Notifications)
+
+## Authentication (Keycloak)
+
+- [ ] Keycloak deployed as a Pod in the eurotransit namespace, acting as OIDC provider / JWT issuer
+- [ ] Distributed JWT validation (pattern B): each Spring Boot service validates Bearer tokens locally via spring-boot-starter-oauth2-resource-server against Keycloak's JWKS endpoint; no authentication step at the gateway
+- [ ] Public API endpoints (POST /api/v1/orders, GET /api/v1/catalog/products) reject requests without a valid JWT (401 Unauthorized)
+- [ ] Frontend authenticates users against Keycloak (OIDC) and attaches the resulting Bearer token to its API calls
 
 ## Chaos experiments
 
