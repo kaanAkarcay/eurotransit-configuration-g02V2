@@ -21,7 +21,7 @@ orders:
   replicaCount: 1
   image:
     repository: kaantryoutregistry.azurecr.io/eurotransit/orders
-    tag: 55b07f6
+    tag: 0314bd4
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
