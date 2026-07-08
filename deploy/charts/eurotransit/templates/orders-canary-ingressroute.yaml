@@ -1,0 +1,18 @@
+{{- if .Values.canary.orders.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "eurotransit.fullname" . }}-orders-canary
+  namespace: {{ .Values.namespace }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.canary.orders.host }}`) && PathPrefix(`/api/v1/orders`)
+      kind: Rule
+      services:
+        - name: {{ include "eurotransit.fullname" . }}-orders-canary
+          kind: TraefikService
+  tls:
+    secretName: eurotransit-tls
+{{- end }}
