@@ -48,7 +48,7 @@ notifications:
   replicaCount: 1
   image:
     repository: kaantryoutregistry.azurecr.io/eurotransit/notifications
-    tag: dc85876
+    tag: 79ae31c
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
