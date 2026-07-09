@@ -185,7 +185,7 @@ Internally, Payments calls the external payment gateway — its **own**, separat
 
 ## 2. Asynchronous order pipeline (Kafka)
 
-Orders is the sole producer and the sole consumer of every topic below except `order-confirmed` and `order-failed` (also consumed by Notifications) and `order-failed` (also consumed by Inventory, for compensation). Each topic marks the boundary between one of Orders' four internal stages — entered by consuming an event, exited by publishing the next one. Every Kafka message includes an `event_id` for consumer-side deduplication and an `event_timestamp` with the UTC instant when the producer created the event payload.
+Orders is the sole producer and the sole consumer of every topic below except `order-confirmed` (also consumed by Notifications) and `order-failed` (also consumed by Notifications and Inventory, for compensation). Each topic marks the boundary between one of Orders' four internal stages — entered by consuming an event, exited by publishing the next one. Every Kafka message includes an `event_id` for consumer-side deduplication and an `event_timestamp` with the UTC instant when the producer created the event payload.
 
 ### Order state machine
 
