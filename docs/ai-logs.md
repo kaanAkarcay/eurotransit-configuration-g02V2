@@ -5,6 +5,58 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-09 22:35
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Install the Strimzi Kafka operator (KRaft) and create the 6 Kafka topics for
+the money path, on `feature/strimzi-kafka-topics`.
+
+**Files Modified**
+
+- platform/strimzi/operator-values.yaml (created)
+- platform/strimzi/kafka-cluster.yaml (created)
+- platform/strimzi/kafka-topics.yaml (created)
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Chart version (1.1.0), namespace (`kafka`), node count (3, KRaft), storage,
+and partition count (3) were all decided by the human (Kaan), not the agent.
+Manifests were verified against the actual strimzi-kafka-operator 1.1.0 CRDs
+(pulled and inspected directly) before writing, which caught a real API
+difference from older Strimzi versions: `kafka.strimzi.io/v1`, not `v1beta2`,
+and `replicas`/`storage` now live on `KafkaNodePool` rather than `Kafka`.
+Applied to Srbuhi's `Lab02cluster` (resource group `G_06`) and confirmed
+live: operator rolled out, Kafka reached `Ready`, all 6 topics show
+`READY: True` with 3 partitions / replication factor 3.
+
+**Potential Risks**
+
+- `min.insync.replicas: 2` and the two resource names were agent judgment
+  calls, flagged to the human rather than asked as a separate question.
+- Branch is 9 commits behind `origin/main` (CI image-tag bumps only, no
+  overlap) — rebase before opening the PR.
+- `docs/architecture-design.md`/`docs/dod.md` already carry an approved
+  Catalog-DB + Keycloak change from a separate session, not yet cross-checked
+  against the saga/outbox redesign done in this one.
+
+**Confidence**
+
+High — verified against the CRD schema before writing and against the live
+cluster after applying.
+
+**Notes**
+
+this entry exists so those decisions are visible to the team, not just
+captured in chat history.
+
+---
+
 ### 2026-07-09 17:46
 
 **Agent**
