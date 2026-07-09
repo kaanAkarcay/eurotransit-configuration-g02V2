@@ -5,6 +5,52 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-09 11:20
+
+**Agent**
+
+Codex — Resilience Engineering agent
+
+**Task**
+
+Install Chaos Mesh through the existing GitOps/configuration repository.
+
+**Files Modified**
+
+- platform/argocd/chaos-mesh-application.yaml
+- docs/ai-logs.md
+
+**Summary**
+
+Added a GitOps-managed Argo CD Application for the official Chaos Mesh Helm
+chart. The configuration installs Chaos Mesh into the `chaos-mesh` namespace,
+uses AKS/containerd runtime settings, keeps the dashboard internal, and supports
+the documented `PodChaos` and `NetworkChaos` experiment hypotheses.
+
+**Potential Risks**
+
+- Live installation depends on the Argo CD instance being able to reach
+  `https://charts.chaos-mesh.org` and `ghcr.io`.
+- `ServerSideApply=true` is used to reduce CRD apply issues; this assumes the
+  deployed Argo CD version supports that sync option.
+- The team should converge on one log filename convention:
+  `docs/ai-guidelines.md` uses `docs/ai-logs.md`, while `docs/dod.md` mentions
+  `docs/agent-log.md`.
+
+**Confidence**
+
+Medium
+
+**Notes**
+
+This change installs the Chaos Mesh platform prerequisite only. It does not
+define or run any chaos experiments. During implementation, Codex initially
+mistook `docs/ai-logs.md` as missing because it had inspected an older branch;
+after switching to `origin/dev`, the file existed. The overwrite was detected
+with `git diff`/`git show HEAD:docs/ai-logs.md` and corrected.
+
+---
+
 ### 2026-07-08 20:07
 
 **Agent**
