@@ -1,0 +1,38 @@
+# OS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# IDE metadata
+.idea/
+.vscode/
+*.iml
+
+# Editor swap and backup files
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# Logs and local caches
+*.log
+.cache/
+.tmp/
+tmp/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+.azure/
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Local render/output files
+rendered.yaml
+manifests.yaml
+values.local.yaml
+*.local.yaml
