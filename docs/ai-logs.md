@@ -38,7 +38,11 @@ Orders request path and stage-produced outbox events now include `event_id` and
 `event_timestamp`; stage outbox topics use the canonical `eurotransit.*` topic
 names. A follow-up alignment made `order-placed` use the Orders outbox instead
 of a direct Kafka send, and made Stage 2 persist the `RESERVED` order state when
-processing `inventory-reserved`.
+processing `inventory-reserved`. A later review fix made Stage 2 reject
+authorized payment responses that do not include `transaction_id`, preventing a
+malformed `payment-authorized` event from reaching Stage 3. Stage 4 now uses
+the same canonical `PAYMENT_REJECTED` fallback as Stage 2 when a malformed
+`payment-failed` event has no reason.
 
 **Potential Risks**
 
@@ -53,7 +57,7 @@ Medium
 
 **Notes**
 
-Valeria verified Orders locally with `java -jar .\gradle\wrapper\gradle-wrapper.jar clean test`; the build was successful. The normal `gradlew.bat` wrapper fails in this workspace because the `CloudProg&Ops` path is split by `cmd.exe`. A later sandboxed test rerun was blocked because Gradle attempted to download its distribution without network access.
+Valeria verified Orders locally with `java -jar .\gradle\wrapper\gradle-wrapper.jar clean test`; the build was successful. The normal `gradlew.bat` wrapper fails in this workspace because the `CloudProg&Ops` path is split by `cmd.exe`. Later test reruns should be executed locally by Valeria because the sandbox cannot access the Gradle distribution.
 
 ---
 

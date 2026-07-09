@@ -307,12 +307,12 @@ On receive: Notifications sends a confirmation email. **Graceful degradation**: 
   "event_timestamp": "2026-07-15T10:00:00.450Z",
   "order_id": "ord-98765",
   "reservation_id": "res-777",
-  "reason": "payment_declined",
+  "reason": "insufficient_funds",
   "user_email": "user@example.com"
 }
 ```
 
-Note: `reservation_id` is only present when the failure happened after a reservation existed (i.e. published by Stage 4, not by Stage 1's direct no-seats path) — that's what tells Inventory whether there's anything to compensate.
+Note: `reservation_id` is only present when the failure happened after a reservation existed (i.e. published by Stage 4, not by Stage 1's direct no-seats path) — that's what tells Inventory whether there's anything to compensate. For payment failures, `reason` is propagated from `payment-failed`; if Stage 4 receives an older or malformed event without a reason, it uses `PAYMENT_REJECTED`.
 
 On receive by Inventory: if `reservation_id` is present, releases the reservation (compensation) by calling its own `UPDATE seats SET available = available + :quantity ...`; otherwise ignores (nothing was reserved). On receive by Notifications: sends a failure email to the user.
 
