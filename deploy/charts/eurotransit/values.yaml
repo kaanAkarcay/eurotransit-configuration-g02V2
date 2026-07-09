@@ -1,5 +1,4 @@
 namespace: eurotransit
-
 frontend:
   replicaCount: 1
   image:
@@ -9,7 +8,6 @@ frontend:
   service:
     type: ClusterIP
     port: 80
-
 catalog:
   replicaCount: 1
   image:
@@ -19,17 +17,15 @@ catalog:
   service:
     type: ClusterIP
     port: 8080
-
 orders:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
-    tag: latest
+    tag: 0314bd4
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
     port: 8080
-
 inventory:
   replicaCount: 1
   image:
@@ -39,7 +35,6 @@ inventory:
   service:
     type: ClusterIP
     port: 8080
-
 payments:
   replicaCount: 1
   image:
@@ -49,20 +44,17 @@ payments:
   service:
     type: ClusterIP
     port: 8080
-
 notifications:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
-    tag: latest
+    tag: 4a878ec
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
     port: 8080
-
 imagePullSecrets:
   - name: acr-secret
-
 cluster:
   enabled: true
   type: postgresql

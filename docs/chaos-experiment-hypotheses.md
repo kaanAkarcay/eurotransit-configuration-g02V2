@@ -26,21 +26,21 @@ These hypotheses are formulated before the experiments are executed. Each will b
 
 ## Experiment 2: Pod kill on Inventory mid-reservation
 
-**Failure mode:** Inventory pod is killed (SIGKILL) while processing an `order-placed` event and executing the atomic reservation SQL.
+**Failure mode:** Inventory pod is killed (SIGKILL) while handling a synchronous `POST /reserve` call from Orders' Stage 1, mid-way through executing the atomic reservation SQL.
 
 **Chaos Mesh resource:** PodChaos (pod-kill) targeting pods with label `app.kubernetes.io/name: inventory`, triggered during active load.
 
-**Hypothesis:** The killed pod is restarted by the ReplicaSet controller. The Kafka consumer group rebalances and the unacknowledged `order-placed` event is re-delivered to the new pod. Because the reservation and the `processed_events` insert happen in the same database transaction, one of two things happened: either the transaction committed (seat reserved, event_id recorded) and the re-delivery is deduplicated, or the transaction rolled back (no reservation) and the re-delivery processes normally. In neither case does a double-reservation occur. The "never oversell" invariant holds.
+**Hypothesis:** Orders' `POST /reserve` call times out or gets a connection error when the pod dies. Orders' bounded retry-with-backoff-and-jitter re-sends the same request (same `idempotency_key` = `order_id`), landing on the ReplicaSet's replacement pod (or another existing replica). Because the reservation UPDATE and the `processed_requests` insert happen in the same database transaction, one of two things happened on the killed pod: either the transaction committed (seat reserved, idempotency key recorded) — in which case the retry hits the idempotency check and returns the existing `reservation_id` without reserving again — or the transaction rolled back (no reservation) — in which case the retry reserves normally. In neither case does a double-reservation occur. The "never oversell" invariant holds.
 
 **Steady state:** Inventory available seats equal to expected count. No duplicate reservations in the database. All orders eventually reach a terminal state (CONFIRMED or FAILED).
 
 **What we will observe:**
 - Grafana: Inventory pod restart counter increases
-- Grafana: brief spike in order processing latency (consumer rebalance takes a few seconds)
+- Grafana: brief spike in Orders' Stage 1 call latency (connection retry + failover to a healthy replica)
 - Database query: SELECT count(*) FROM seats WHERE train_id = X confirms no oversell
-- Database query: SELECT count(*) FROM processed_events confirms no duplicate processing
+- Database query: SELECT count(*) FROM processed_requests confirms no duplicate reservation for the same order_id
 
-**Validation criteria:** Zero oversold seats. Every order reaches a terminal state. No duplicate entries in processed_events for the same event_id.
+**Validation criteria:** Zero oversold seats. Every order reaches a terminal state. No duplicate entries in processed_requests for the same order_id.
 
 ---
 
@@ -70,7 +70,7 @@ These hypotheses are formulated before the experiments are executed. Each will b
 
 **Chaos Mesh resource:** NetworkChaos (partition) targeting traffic between namespace `eurotransit` and Kafka broker pods (Strimzi namespace).
 
-**Hypothesis:** During the partition, Orders cannot publish `order-placed` events. POST /orders either returns 500 (if the publish is in the request path) or successfully saves PENDING but the event is buffered by the Kafka producer and not delivered. No events are lost because Kafka producers retry with idempotent delivery enabled. When the partition heals, buffered events are delivered. Consumers resume processing. All PENDING orders eventually reach a terminal state. No events are duplicated (Kafka idempotent producer + consumer-side processed_events deduplication). The pipeline converges to a consistent state.
+**Hypothesis:** `POST /orders` always returns `202` immediately, partition or not — the `order-placed` event is written to Orders' own outbox table in the same transaction as saving PENDING, and Kafka is never called synchronously in the request path (see the outbox pattern, contract §3.3). During the partition, Orders' outbox poller's publish attempts fail and retry; unrelayed rows accumulate in the outbox rather than being lost. Any order already past Stage 1 (e.g. sitting RESERVED, waiting for its own `payment-authorized`/`payment-failed` self-consumption) also stalls, since Stages 2-4 are Kafka round trips too — but nothing is lost, it's just delayed. When the partition heals, the poller drains the backlog and all stalled stages resume. All PENDING/RESERVED orders eventually reach a terminal state. No events are duplicated (outbox rows are marked sent exactly once via `SELECT ... FOR UPDATE SKIP LOCKED`, plus consumer-side `processed_events` deduplication on Orders' own stage consumers). The pipeline converges to a consistent state.
 
 **Steady state:** All PENDING orders reach CONFIRMED or FAILED within 30 seconds. No orphaned PENDING orders. Event count in Kafka matches order count.
 

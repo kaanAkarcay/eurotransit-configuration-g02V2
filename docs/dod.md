@@ -1,13 +1,13 @@
 # EuroTransit — Definition of Done
 
 > This is a living document. Update it as the project evolves.
-> Last updated: YYYY-MM-DD
+> Last updated: 2026-07-08
 
 ## Pillar A: Distributed design and asynchronous execution
 
 - [ ] Service decomposition documented with sync/async boundaries and justification for each
 - [ ] POST /api/v1/orders returns 202 PENDING immediately; pipeline proceeds via Kafka
-- [ ] 5 Kafka topics operational: order-placed, inventory-reserved, inventory-reservation-failed, order-confirmed, order-failed
+- [ ] 6 Kafka topics operational, all produced and mostly self-consumed by Orders across its four internal stages: order-placed, inventory-reserved, payment-authorized, payment-failed, order-confirmed, order-failed
 - [ ] Order pipeline uses Kotlin coroutines / Flows for async processing
 - [ ] Structured concurrency: each Kafka consumer runs in a CoroutineScope as a failure domain
 - [ ] Cooperative cancellation on SIGTERM: in-flight work finishes or is cleanly cancelled, no orphaned tasks, no double-processing
@@ -19,15 +19,17 @@
 - [ ] Consistency model documented in CAP/PACELC terms (PC/EC: reject writes under partition, strong consistency via primary in normal operation)
 - [ ] Atomic reservation in PostgreSQL: UPDATE seats SET available = available - :qty WHERE available >= :qty
 - [ ] "Never oversell" invariant holds under concurrent requests
-- [ ] Idempotency level 1 (REST): processed_requests table in Orders, keyed on frontend idempotency_key
-- [ ] Idempotency level 2 (Kafka): processed_events table in each consuming service, keyed on event_id, checked in the same DB transaction as business logic
-- [ ] Compensation path: order-failed triggers Inventory to release reservation
+- [ ] Idempotency level 1 (REST, frontend): processed_requests table in Orders, keyed on the client's idempotency_key
+- [ ] Idempotency level 2 (REST, internal): processed_requests table in Inventory and Payments, keyed on order_id, protecting Orders' bounded retries on POST /reserve and POST /authorize from double-reserving or double-charging
+- [ ] Idempotency level 3 (Kafka): processed_events table in every Kafka consumer (Orders consuming its own order-placed/inventory-reserved/payment-authorized/payment-failed across its four stages, plus Inventory consuming order-failed), keyed on event_id, checked in the same DB transaction as business logic
+- [ ] Outbox pattern used for Orders' DB-write-then-Kafka-publish step at every stage transition (Inventory and Payments need no outbox — they never publish to Kafka): event written to Orders' own outbox table in the same transaction as the business write; a polling relay publishes to Kafka and marks rows sent, using SELECT ... FOR UPDATE SKIP LOCKED so multiple replicas never double-publish the same row
+- [ ] Compensation path: order-failed (with reservation_id) triggers Inventory to release reservation
 - [ ] Demonstrated under chaos: oversell does not occur when messages are duplicated or a pod dies mid-reservation
 
 ## Pillar C: Resilience engineering
 
-- [ ] Circuit breaker on Orders → Payments sync call, with defined open/half-open policy and explicit fallback
-- [ ] Bulkhead: isolated connection pools for each downstream service
+- [ ] Circuit breaker on Orders → Payments sync call (the brief's named example), with defined open/half-open policy and explicit fallback (treat as declined); same treatment (timeout + bounded retry, circuit breaker) on Orders → Inventory; a third, independent circuit breaker on Payments → external gateway, since that's a separate failure mode from Orders → Payments
+- [ ] Bulkhead: isolated connection pools for each downstream service (Orders→Inventory, Orders→Payments, Payments→gateway)
 - [ ] Timeout + exponential backoff + jitter on every remote call
 - [ ] Backpressure / load shedding: HTTP 429 when overloaded
 - [ ] Graceful degradation: Notifications can be completely down without affecting checkout
@@ -49,6 +51,13 @@
 - [ ] SLO: 99% of PENDING orders reach terminal state within 30s (pipeline completion)
 - [ ] Alerts based on burn-rate, not raw thresholds
 - [ ] Distributed tracing across the money path (request → Orders → Inventory/Payments → Kafka → Notifications)
+
+## Authentication (Keycloak)
+
+- [ ] Keycloak deployed as a Pod in the eurotransit namespace, acting as OIDC provider / JWT issuer
+- [ ] Distributed JWT validation (pattern B): each Spring Boot service validates Bearer tokens locally via spring-boot-starter-oauth2-resource-server against Keycloak's JWKS endpoint; no authentication step at the gateway
+- [ ] Public API endpoints (POST /api/v1/orders, GET /api/v1/catalog/products) reject requests without a valid JWT (401 Unauthorized)
+- [ ] Frontend authenticates users against Keycloak (OIDC) and attaches the resulting Bearer token to its API calls
 
 ## Chaos experiments
 

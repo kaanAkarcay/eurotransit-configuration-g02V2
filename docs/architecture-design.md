@@ -20,9 +20,11 @@
                           │       Notifications (:8080)                              │
                           │                                                          │
                           │  Data layer:                                             │
-                          │       Kafka (Strimzi)     ──  8 event topics             │
-                          │       PostgreSQL (CNPG)   ──  3 clusters: orders-db,     │
-                          │                               inventory-db, payments-db  │
+                          │       Kafka (Strimzi)     ──  6 event topics, all owned  │
+                          │                               and produced by Orders     │
+                          │       PostgreSQL (CNPG)   ──  4 clusters: catalog-db,    │
+                          │                               orders-db, inventory-db,   │
+                          │                               payments-db                │
                           │                                                          │
                           │  Platform:                                               │
                           │       Argo CD         ──  GitOps delivery                 │
@@ -30,6 +32,7 @@
                           │       Grafana         ──  dashboards                      │
                           │       Chaos Mesh      ──  fault injection                 │
                           │       Sealed Secrets  ──  encrypted secrets in Git        │
+                          │       Keycloak        ──  OIDC provider (JWT issuer)      │
                           │                                                          │
                           └──────────────────────────────────────────────────────────┘
 ```
@@ -42,7 +45,7 @@ Each service is an independent Spring Boot (Kotlin) application with its own:
 - Docker image on ACR
 - Kubernetes Deployment + Service
 - ServiceMonitor (Prometheus scraping via /actuator/prometheus)
-- own CloudNativePG cluster and database — Orders, Inventory, and Payments only. Catalog is stateless/read-only and Notifications needs no durable dedup, so neither gets a CNPG cluster.
+- own CloudNativePG cluster and database — Catalog, Orders, Inventory, and Payments. Notifications needs no durable dedup, so it doesn't get a CNPG cluster.
 
 ### Service responsibilities
 
@@ -51,35 +54,47 @@ Each service is an independent Spring Boot (Kotlin) application with its own:
 │ Service        │ What it does                                              │
 ├────────────────┼────────────────────────────────────────────────────────────┤
 │ Catalog        │ GET /api/v1/catalog/products — lists trains + prices.     │
-│                │ Read-only, tolerant of staleness. No Kafka, no DB.        │
+│                │ Read-only, tolerant of staleness. No Kafka. Owns own      │
+│                │ CNPG cluster (catalog-db).                                │
 ├────────────────┼────────────────────────────────────────────────────────────┤
 │ Orders         │ POST /api/v1/orders — accepts order, returns 202 PENDING. │
 │                │ GET /api/v1/orders/{id} — polling for status.             │
-│                │ Orchestrator: publishes order-placed and payment-         │
-│                │ requested; consumes inventory-reserved/-reservation-      │
-│                │ failed and payment-authorized/-failed to drive the        │
-│                │ order state machine. No synchronous calls to Inventory    │
-│                │ or Payments — every cross-service hop is Kafka.           │
+│                │ Orchestrator: four Kafka-driven stages, each one entered  │
+│                │ by consuming an event and exited by publishing the next. │
+│                │ Stage 1 (order-placed) calls Inventory synchronously to   │
+│                │ reserve. Stage 2 (inventory-reserved) calls Payments      │
+│                │ synchronously to authorize. Stage 3 (payment-authorized)  │
+│                │ confirms. Stage 4 (payment-failed) fails the order and    │
+│                │ triggers compensation. Orders is the only service that    │
+│                │ both writes to its own DB and publishes to Kafka in the   │
+│                │ same step — so it's the only one that needs the outbox.  │
 │                │ Owns own CNPG cluster (orders-db): orders,                │
-│                │ processed_requests, processed_events.                    │
+│                │ processed_requests, processed_events, outbox.            │
 ├────────────────┼────────────────────────────────────────────────────────────┤
-│ Inventory      │ Consumes order-placed, reserves seats atomically via      │
-│                │ PostgreSQL UPDATE ... WHERE available >= qty.             │
-│                │ Publishes inventory-reserved or inventory-reservation-     │
-│                │ failed. Consumes order-failed for compensation (release). │
+│ Inventory      │ POST /reserve — called synchronously by Orders' Stage 1.  │
+│                │ Reserves seats atomically via PostgreSQL UPDATE ...       │
+│                │ WHERE available >= qty; returns the decision immediately  │
+│                │ (200 reserved / 409 no seats). Idempotency key dedup on   │
+│                │ the request protects Orders' bounded retries. Orders,     │
+│                │ not Inventory, publishes inventory-reserved/order-failed  │
+│                │ based on that response. Separately consumes order-failed  │
+│                │ (Kafka) to release a reservation on compensation.         │
 │                │ Owns own CNPG cluster (inventory-db): seats,              │
-│                │ processed_events.                                         │
+│                │ processed_requests (sync dedup), processed_events         │
+│                │ (order-failed dedup). No outbox — it never publishes.     │
 ├────────────────┼────────────────────────────────────────────────────────────┤
-│ Payments       │ Consumes payment-requested. Calls the external payment    │
-│                │ gateway — the one remaining synchronous remote call in    │
-│                │ the whole system — wrapped in a circuit breaker (open /   │
-│                │ half-open, safe fallback = publish payment-failed).       │
-│                │ Publishes payment-authorized or payment-failed. Same      │
-│                │ idempotency pattern as every other consumer (see §3.2 of  │
-│                │ the contract): processed_events keyed on event_id,        │
-│                │ checked in the same transaction as the business write.    │
+│ Payments       │ POST /authorize — called synchronously by Orders' Stage 2, │
+│                │ wrapped in a circuit breaker on that edge (open/half-     │
+│                │ open, fallback = treat as declined). Idempotency key      │
+│                │ dedup on the request protects Orders' bounded retries.    │
+│                │ Internally calls the external payment gateway — its own  │
+│                │ separate synchronous call with its own smaller circuit    │
+│                │ breaker. Returns the decision immediately (200/402);      │
+│                │ Orders publishes payment-authorized/payment-failed based  │
+│                │ on that response. No Kafka involvement at all: no         │
+│                │ consumer, no producer, no outbox needed.                  │
 │                │ Owns own CNPG cluster (payments-db): transactions,        │
-│                │ processed_events.                                         │
+│                │ processed_requests (sync dedup).                          │
 ├────────────────┼────────────────────────────────────────────────────────────┤
 │ Notifications  │ Consumes order-confirmed and order-failed.                │
 │                │ Fully async, fire-and-forget. Logs confirmation.          │
@@ -97,69 +112,102 @@ Each service is an independent Spring Boot (Kotlin) application with its own:
 │                              │                                           │
 │                    publishes │ Kafka: order-placed                        │
 │                              ▼                                           │
+│                 Orders — Stage 1 (Reservation)                           │
+│                              │                                           │
+│                   sync HTTP  │  POST /reserve (idempotency key,          │
+│                              │   timeout + bounded retry + jitter)       │
+│                              ▼                                           │
 │                          Inventory                                       │
-│                           │    │                                         │
-│              ┌────────────┘    └──────────────┐                          │
-│              ▼                                ▼                          │
-│     Kafka: inventory-reserved      Kafka: inventory-reservation-failed   │
+│                              │                                           │
+│              ┌───────────────┴────────────────┐                          │
+│              ▼ 200 reserved                   ▼ 409 no seats            │
+│    (Stage 1 publishes)                (Stage 1 publishes)               │
+│  Kafka: inventory-reserved            Kafka: order-failed                │
+│              │                        (nothing to compensate — no       │
+│              │                         reservation was ever made)        │
+│              ▼                                                          │
+│                 Orders — Stage 2 (Payment)                               │
+│                              │                                           │
+│                   sync HTTP  │  POST /authorize (idempotency key,       │
+│                              │   circuit breaker: open/half-open)        │
+│                              ▼                                           │
+│                          Payments                                        │
+│                              │                                           │
+│                   sync HTTP  │  (Payments' own, separate circuit         │
+│                              │   breaker: open/half-open, fallback =    │
+│                              │   respond 402 without calling gateway)   │
+│                              ▼                                           │
+│                  external payment gateway                                │
+│                              │                                           │
+│                              ▼                                           │
+│                          Payments                                        │
+│                              │  returns 200 authorized / 402 declined   │
+│              ┌───────────────┴────────────────┐                          │
+│              ▼ 200 authorized                 ▼ 402 declined            │
+│    (Stage 2 publishes)                (Stage 2 publishes)               │
+│  Kafka: payment-authorized            Kafka: payment-failed             │
 │              │                                │                          │
 │              ▼                                ▼                          │
-│           Orders                           Orders                        │
-│              │                          (sets FAILED,                     │
-│    publishes │ Kafka: payment-requested   publishes order-failed)         │
-│              ▼                                                           │
-│          Payments                                                        │
-│              │                                                           │
-│   sync HTTP  │  (circuit breaker: open/half-open,                        │
-│              │   fallback = publish payment-failed)                      │
-│              ▼                                                           │
-│  external payment gateway                                                │
-│              │                                                           │
-│              ▼                                                           │
-│          Payments                                                        │
-│           │    │                                                         │
-│  ┌────────┘    └──────────┐                                              │
-│  ▼                        ▼                                              │
-│ Kafka:                    Kafka:                                          │
-│ payment-authorized        payment-failed                                 │
-│  │                        │                                              │
-│  ▼                        ▼                                              │
-│ Orders                   Orders                                          │
-│ (sets CONFIRMED,         (sets FAILED,                                   │
-│  publishes                publishes order-failed)                        │
-│  order-confirmed)                                                        │
-│  │                                                                       │
-│  ▼                                                                       │
-│ Notifications (logs / email)                                             │
-│                                                                          │
-│  order-failed (from either the inventory stage or the payment stage):    │
-│     ──► Inventory consumes order-failed, releases reservation if one     │
-│         was held (compensation)                                          │
-│     ──► Notifications consumes order-failed, sends failure notice        │
+│    Orders — Stage 3                  Orders — Stage 4                   │
+│    (Confirmation)                    (Failure handling)                 │
+│              │                                │                          │
+│    publishes │ Kafka:                publishes │ Kafka: order-failed     │
+│              │ order-confirmed                 │ (WITH reservation_id   │
+│              ▼                                 │  this time → compensate)│
+│         Notifications                          ▼                        │
+│         (logs / email)              ┌──────────┴──────────┐             │
+│                                      ▼                     ▼             │
+│                                  Inventory            Notifications      │
+│                            (releases reservation)   (failure email)     │
 │                                                                          │
 └──────────────────────────────────────────────────────────────────────────┘
 
 Legend:
-  ───► Kafka:    = async event via Kafka topic (every cross-service hop)
-  ───► sync HTTP = the one remaining synchronous remote call in the system:
-                   Payments' own outbound call to the external payment
-                   gateway. It is not a call between our own services.
+  ───► Kafka:    = async event. Every one of these is Orders publishing to
+                   itself to move between its own four stages, or to
+                   Inventory (compensation) / Notifications (fire-and-
+                   forget). Inventory and Payments never touch Kafka.
+  ───► sync HTTP = a real, independent synchronous call, each with its own
+                   timeout/retry/circuit-breaker policy: Orders→Inventory,
+                   Orders→Payments, and Payments→external gateway are three
+                   separate edges, not one.
+  JWT            = every inbound client API call (POST /orders,
+                   GET /catalog/products) carries a Bearer JWT. Validation is
+                   distributed (pattern B): each service verifies the token
+                   locally via spring-boot-starter-oauth2-resource-server
+                   against Keycloak's JWKS endpoint — no gateway-side auth.
 ```
+
+### Authentication (Keycloak)
+
+Keycloak runs as a Pod in the `eurotransit` namespace and is the OIDC provider /
+JWT issuer for the system. Authentication follows **pattern B — distributed JWT
+validation**: there is no authentication step at the gateway. Instead, every
+Spring Boot service validates incoming Bearer tokens locally using
+`spring-boot-starter-oauth2-resource-server`, fetching Keycloak's public signing
+keys from its JWKS endpoint and caching them. A token issued by Keycloak is
+therefore accepted and verified independently by whichever service receives the
+request, with no per-request round trip back to Keycloak.
 
 ### Kafka topics
 
 ```
 Topic                                  Producer       Consumer(s)
 ─────────────────────────────────────  ─────────────  ──────────────────────
-eurotransit.order-placed               Orders         Inventory
-eurotransit.inventory-reserved         Inventory      Orders
-eurotransit.inventory-reservation-     Inventory      Orders
-  failed
-eurotransit.payment-requested          Orders         Payments
-eurotransit.payment-authorized         Payments       Orders
-eurotransit.payment-failed             Payments       Orders
+eurotransit.order-placed               Orders         Orders (Stage 1)
+eurotransit.inventory-reserved         Orders         Orders (Stage 2)
+eurotransit.payment-authorized         Orders         Orders (Stage 3)
+eurotransit.payment-failed             Orders         Orders (Stage 4)
 eurotransit.order-confirmed            Orders         Notifications
 eurotransit.order-failed               Orders         Inventory, Notifications
+
+Note: Orders is the sole producer of every topic. Inventory and Payments never
+publish — Orders publishes the outcome after receiving their synchronous HTTP
+response. Orders consuming its own order-placed/inventory-reserved/payment-
+authorized/payment-failed events (via separate consumer stages) is a
+deliberate pattern: it decouples the fast client-facing HTTP response from
+the actual processing work, which can run on a different replica, retry
+independently, and be load-shed under backpressure.
 ```
 
 ### Order state machine
@@ -171,6 +219,18 @@ PENDING ──► RESERVED ──► CONFIRMED
  FAILED       FAILED (+ release reservation)
 ```
 
+### Reliable event publishing (Outbox pattern)
+
+The dual-write problem — a local DB write followed by a Kafka publish, with a pod killed in between leaving the local state saying "done" while nothing downstream ever finds out — only exists where a service does **both** a DB write and a Kafka publish for the same operation. With Inventory and Payments now reduced to pure synchronous services (no Kafka producer at all), **Orders is the only service with this problem**: every one of its four stages writes to its own DB (e.g., marking the order RESERVED) and immediately publishes the next event (e.g., `inventory-reserved`).
+
+- Orders writes the outgoing event to its own `outbox` table in the **same local transaction** as the business write (e.g., updating the order row and inserting into `outbox` commit together, atomically, in `orders-db`).
+- A polling relay — a scheduled loop inside Orders — periodically reads un-relayed `outbox` rows, publishes them to Kafka, and marks them sent.
+- The relay query uses `SELECT ... FOR UPDATE SKIP LOCKED` so that if Orders is scaled to multiple replicas (HPA), two replica pollers can never grab and double-publish the same row.
+
+Inventory and Payments don't need an outbox: Inventory's atomic reservation is a single transaction in its own database with no second system to coordinate with (it answers Orders synchronously, in the same request — nothing to lose between a commit and a publish that doesn't happen). Payments likewise never publishes anything.
+
+This does not change the consistency model: the business decision (e.g., the reservation) is still made atomically and instantly in the same transaction as before. The outbox only affects how quickly that already-durable decision is relayed to Kafka — a pipeline-latency concern, not a correctness concern.
+
 ## 3. Frontend
 
 A simple SPA (React, Vue, or plain HTML) served by nginx on port 80.
@@ -180,7 +240,7 @@ Pages:
 - Buy button (calls POST /api/v1/orders with idempotency_key)
 - Order status (polls GET /api/v1/orders/{id} until CONFIRMED or FAILED)
 
-The frontend is a thin client. No business logic, no auth, no state management beyond the current order. It runs in a container with nginx, served through Traefik at path `/`.
+The frontend is a thin client. No business logic, no state management beyond the current order. It authenticates users against Keycloak (OIDC) and attaches the resulting Bearer JWT to its API calls. It runs in a container with nginx, served through Traefik at path `/`.
 
 ## 4. CI pipeline (application repo)
 
@@ -201,7 +261,7 @@ Developer pushes code
 │    1. ./gradlew build                                              │
 │    2. ./gradlew test                                               │
 │    3. docker build → tag with commit SHA                           │
-│    4. docker push → lab02clusterregistry.azurecr.io/eurotransit/XXX │
+│    4. docker push → kaantryoutregistry.azurecr.io/eurotransit/XXX  │
 │    5. git clone config repo                                        │
 │    6. update values.yaml with new image tag                        │
 │    7. git commit + push to config repo (main)                      │
@@ -310,6 +370,7 @@ eurotransit-configuration/
 │   ├── cert-manager/
 │   ├── cnpg/
 │   │   ├── operator-values.yaml
+│   │   ├── catalog-db-cluster.yaml
 │   │   ├── orders-db-cluster.yaml
 │   │   ├── inventory-db-cluster.yaml
 │   │   └── payments-db-cluster.yaml
@@ -350,9 +411,8 @@ eurotransit-configuration/
 
 ## 7. What is NOT needed
 
-- Authentication / JWT / OAuth — not in the capstone requirements
 - Real email sending — Notifications just logs
 - Complex frontend — a simple page with catalog, buy button, and status polling
 - API gateway software (Kong, etc.) — Traefik covers routing
-- Shared database across services — Orders, Inventory, and Payments each own a separate CloudNativePG cluster on purpose, so a DB failover or chaos experiment on one doesn't take the others down with it. No cross-service joins or shared schemas.
+- Shared database across services — Catalog, Orders, Inventory, and Payments each own a separate CloudNativePG cluster on purpose, so a DB failover or chaos experiment on one doesn't take the others down with it. No cross-service joins or shared schemas.
 - Staging environment — one namespace, one cluster

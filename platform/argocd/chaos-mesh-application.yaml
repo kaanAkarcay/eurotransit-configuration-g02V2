@@ -1,0 +1,73 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chaos-mesh
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.chaos-mesh.org
+    chart: chaos-mesh
+    targetRevision: 2.8.3
+    helm:
+      releaseName: chaos-mesh
+      values: |
+        images:
+          registry: ghcr.io
+          tag: v2.8.3
+
+        clusterScoped: true
+        timezone: Europe/Rome
+
+        controllerManager:
+          replicaCount: 1
+          enableFilterNamespace: false
+          resources:
+            requests:
+              cpu: 25m
+              memory: 256Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
+
+        chaosDaemon:
+          runtime: containerd
+          socketPath: /run/containerd/containerd.sock
+          resourceProfile: light
+
+        dashboard:
+          create: true
+          securityMode: true
+          service:
+            type: ClusterIP
+          persistentVolume:
+            enabled: false
+          resources:
+            requests:
+              cpu: 25m
+              memory: 256Mi
+            limits:
+              cpu: 200m
+              memory: 512Mi
+
+        dnsServer:
+          create: false
+
+        prometheus:
+          create: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: chaos-mesh
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
