@@ -5,6 +5,88 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-11 16:54
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Debug why the 5 backend Deployments (catalog, orders, inventory, payments,
+notifications) were failing after the human manually built and pushed images
+to `lab02clusterregistry`, on `dev` (merged to `main` via PR #12).
+
+**Files Modified**
+
+- deploy/charts/eurotransit/templates/{catalog,orders,inventory,payments,notifications}-deployment.yaml
+- deploy/charts/eurotransit/values.yaml
+- platform/cnpg/{catalog,orders,inventory,payments,keycloak}-db-cluster.yaml
+- platform/strimzi/kafka-cluster.yaml
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Two independent, real bugs, not one. First: the Deployment templates' DB env
+vars were leftover from an older single-shared-Postgres design - catalog/
+inventory/payments set `DB_HOST`/etc, which their Spring apps never read
+(they expect `SPRING_R2DBC_URL`/`USERNAME`/`PASSWORD`); orders' names matched
+but pointed at the old shared cluster instead of `orders-db`. All 5 were also
+missing Kafka bootstrap and, for orders, `PAYMENTS_HOST`/`INVENTORY_HOST` -
+confirmed by reading each service's actual `application.yaml`, not assumed.
+Also removed a stale `imagePullSecrets: acr-secret` that referenced a Secret
+that was never created (redundant anyway now that ACR is attached via
+kubelet managed identity).
+
+Second, found while fixing the first: `catalog-db`/`orders-db`/`inventory-db`/
+`payments-db` were still in `cnpg-system`, but their Deployments run in
+`eurotransit` - a Pod's `secretKeyRef` can only resolve a Secret in its own
+namespace, so no amount of env-var renaming would have worked. Moved all 4 to
+`eurotransit`, same reasoning already documented on `keycloak-db`. Required
+deleting and recreating the live `Cluster` CRs (confirmed safe - no real data
+yet, schema-only).
+
+Fix verified end-to-end after merging to `main`: catalog, inventory, and
+payments are healthy (`1/1`, zero restarts, correct image, correct DB/Kafka
+wiring) via the real GitOps flow, not just a manual `kubectl apply`. Orders
+and notifications still crash-loop, but on two unrelated, pre-existing
+application-code bugs (missing `jackson-databind` on the classpath; missing
+`WebClient.Builder` bean for `InventoryClient`) - out of scope for this repo,
+flagged to the human for the application repo.
+
+Also added `resources.requests/limits` to all 5 CNPG clusters and the
+Strimzi `KafkaNodePool` (previously flagged as a gap, deferred until
+something actually failed). It did: `keycloak-db` was killed mid-session by
+a failed liveness probe while running `BestEffort` QoS under real node
+memory pressure (one node hit 101%). Sized from observed usage
+(`kubectl top pods`) with headroom. Confirmed after rollout: all 3 nodes
+back to 86-87% memory, `MemoryPressure: False`, CNPG/Kafka pods now
+`Burstable` QoS, no evictions since.
+
+**Potential Risks**
+
+- Registry push is still manual (`docker build`/`push` by hand) - the
+  application repo's CI pipeline is not yet reliably producing pushed images
+  under its own tags; `main` briefly had a commit pointing at a tag
+  (`06dc58e`) that was never actually pushed to the registry.
+- `payment-gateway-sim` still has no Deployment/Service in the Helm chart at
+  all - deliberately not added without a decision on how it should be wired.
+
+**Confidence**
+
+High for the infra fixes - each one verified live against the real cluster
+(pod logs, `kubectl top`, QoS class, registry manifest checks), not assumed.
+The two remaining crash-looping services are confirmed to be application-code
+bugs, not infra, but the exact fix for either wasn't pinned down yet.
+
+**Notes**
+
+Argo CD's `eurotransit` Application tracks `main`, not `dev` - manual
+`kubectl apply` testing against a `selfHeal: true` Application gets reverted
+on the next reconcile unless the fix actually lands on `main`.
+
+---
+
 ### 2026-07-10 18:20
 
 **Agent**
