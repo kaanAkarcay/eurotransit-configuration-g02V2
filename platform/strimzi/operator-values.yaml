@@ -1,0 +1,15 @@
+# Strimzi Kafka Operator - Helm values
+#
+# Chart: strimzi/strimzi-kafka-operator, version 1.1.0 (pinned)
+# Installed via:
+#   helm repo add strimzi https://strimzi.io/charts/
+#   helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+#     --namespace kafka --create-namespace \
+#     --version 1.1.0 \
+#     --values platform/strimzi/operator-values.yaml
+#
+# No watchNamespaces override: the operator watches only its own release
+# namespace ("kafka") by default, which is also where the Kafka cluster and
+# every KafkaTopic in this project live - no cross-namespace watching needed.
+
+replicas: 1

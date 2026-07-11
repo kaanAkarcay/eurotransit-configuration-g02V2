@@ -1,0 +1,58 @@
+# Kafka cluster for EuroTransit - KRaft mode (no ZooKeeper; the Kafka CRD in
+# Strimzi 1.1.0 doesn't support it anymore).
+#
+# Applied manually, after the Strimzi operator is installed:
+#   kubectl apply -f platform/strimzi/kafka-cluster.yaml
+#
+# Verified against the actual strimzi-kafka-operator 1.1.0 chart's bundled
+# CRDs (kafka.strimzi.io/v1), not assumed from memory:
+# - replicas/storage live on KafkaNodePool, not on the Kafka resource itself
+# - Kafka 4.3.0 is the newest version this operator release supports
+#
+# Node count (3), combined controller+broker role, and 10Gi persistent-claim
+# storage (no explicit storage class - cluster default) are as agreed.
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: eurotransit-pool
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: eurotransit-kafka
+spec:
+  replicas: 3
+  roles:
+    - controller
+    - broker
+  storage:
+    type: persistent-claim
+    size: 10Gi
+    deleteClaim: false
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: eurotransit-kafka
+  namespace: kafka
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: 4.3.0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      # 3 replicas per topic (see kafka-topics.yaml); requiring 2 acks means
+      # writes are rejected rather than accepted with only 1 copy durable -
+      # the same "favor consistency over availability" choice already made
+      # for Inventory's reservation model. Flag if you want this different.
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+  entityOperator:
+    topicOperator: {}

@@ -1,0 +1,24 @@
+# Postgres cluster for Inventory - "the contended resource."
+# 2 instances (1 primary + 1 standby): this is the one cluster Chaos
+# Experiment 5 (CNPG primary failover) targets, so it needs something real
+# to promote a standby from. The other 3 clusters are single-instance.
+#
+# Credentials: CNPG auto-generates a Secret named "inventory-db-app" -
+# reference it via secretKeyRef when wiring up Inventory's Deployment.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/inventory-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: inventory-db
+  namespace: cnpg-system
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  bootstrap:
+    initdb:
+      database: inventory_db
+      owner: inventory

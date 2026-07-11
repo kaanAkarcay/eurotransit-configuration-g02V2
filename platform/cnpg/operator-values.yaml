@@ -1,0 +1,16 @@
+# CloudNativePG Operator - Helm values
+#
+# Chart: cnpg/cloudnative-pg, version 0.29.0 (operator app version 1.30.0)
+# Installed via:
+#   helm repo add cnpg https://cloudnative-pg.github.io/charts
+#   helm upgrade --install cnpg cnpg/cloudnative-pg \
+#     --namespace cnpg-system --create-namespace \
+#     --version 0.29.0 \
+#     --values platform/cnpg/operator-values.yaml
+#
+# CRDs (Cluster, etc., group postgresql.cnpg.io/v1) are installed automatically
+# by this chart (crds.create defaults to true). The operator watches
+# Cluster resources across all namespaces by default - the 4 clusters below
+# live in this same "cnpg-system" namespace, matching the Strimzi pattern.
+
+replicaCount: 1

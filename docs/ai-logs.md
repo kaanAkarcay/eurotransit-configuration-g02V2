@@ -85,59 +85,89 @@ time, not a sign of anything wrong with the manifests.
 
 ---
 
-### 2026-07-09 18:35
+### 2026-07-10 00:20
+
 
 **Agent**
 
-Codex
+Claude Sonnet 5 via Claude Code
 
 **Task**
 
-Resolve the application-repo rebase conflict after Orders' Kafka consumer was
-refactored into stage-specific consumers.
+Install the CloudNativePG operator and create Postgres clusters for all 4
+services (catalog, orders, inventory, payments), on `feature/cnpg-clusters`.
 
 **Files Modified**
 
-- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/service/OrderService.kt`
-- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/Stage1Consumer.kt`
-- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/Stage2Consumer.kt`
-- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/Stage3Consumer.kt`
-- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/Stage4Consumer.kt`
-- `eurotransit-application-g02/orders/src/test/kotlin/it/polito/eurotransit/orders/Stage1ConsumerTest.kt`
-- `eurotransit-application-g02/orders/src/test/kotlin/it/polito/eurotransit/orders/Stage2ConsumerTest.kt`
-- `eurotransit-application-g02/orders/src/test/kotlin/it/polito/eurotransit/orders/Stage3ConsumerTest.kt`
-- `eurotransit-application-g02/orders/src/test/kotlin/it/polito/eurotransit/orders/Stage4ConsumerTest.kt`
-- `eurotransit-application-g02/.github/workflows/ci.yaml`
-- `docs/ai-logs.md`
+- platform/cnpg/operator-values.yaml (created)
+- platform/cnpg/catalog-db-cluster.yaml (created)
+- platform/cnpg/orders-db-cluster.yaml (created)
+- platform/cnpg/inventory-db-cluster.yaml (created)
+- platform/cnpg/payments-db-cluster.yaml (created)
+Install the Strimzi Kafka operator (KRaft) and create the 6 Kafka topics for
+the money path, on `feature/strimzi-kafka-topics`.
+
+**Files Modified**
+
+- platform/strimzi/operator-values.yaml (created)
+- platform/strimzi/kafka-cluster.yaml (created)
+- platform/strimzi/kafka-topics.yaml (created)
+- docs/ai-logs.md (this entry)
 
 **Summary**
 
-Kept the `dev` refactor that removed the old monolithic `OrderConsumer.kt` and
-moved the PR's event-contract work into the new staged Orders pipeline. The
-Orders request path and stage-produced outbox events now include `event_id` and
-`event_timestamp`; stage outbox topics use the canonical `eurotransit.*` topic
-names. A follow-up alignment made `order-placed` use the Orders outbox instead
-of a direct Kafka send, and made Stage 2 persist the `RESERVED` order state when
-processing `inventory-reserved`. A later review fix made Stage 2 reject
-authorized payment responses that do not include `transaction_id`, preventing a
-malformed `payment-authorized` event from reaching Stage 3. Stage 4 now uses
-the same canonical `PAYMENT_REJECTED` fallback as Stage 2 when a malformed
-`payment-failed` event has no reason.
+Scope was widened from the original 3 clusters to all 4 after checking
+ai-logs.md/dev/main confirmed the Catalog-DB architecture change (from a
+separate session) was never reversed. Chart version, namespace, instance
+counts, and Postgres version were human decisions; Postgres 17 was confirmed
+to actually exist in the registry before use (direct manifest check), not
+assumed. `inventory-db` got 2 instances (the Chaos Experiment 5 target), the
+other 3 got 1 each.
+
+Applying all 4 hit a real infrastructure limit, not a manifest problem: the
+node's Azure Disk CSI driver allows a maximum of 4 attached volumes
+(confirmed via `kubectl get csinode ... -o yaml`), and Strimzi's 3 Kafka
+broker PVCs already consume 3 of those before any Postgres cluster is even
+considered. Root-caused via `FailedScheduling` events rather than guessed.
+Resolved pragmatically for now: `orders-db` (the only service with real
+application code to test against) is live and healthy; `catalog-db`,
+`inventory-db`, and `payments-db` were deliberately deleted from the live
+cluster to keep `orders-db` unblocked, while their manifests stay committed
+and untouched. Full reconciliation is pending a node-pool scaling decision
+the human is taking to the team.
+
+**Resolved (same branch, after node pool scaled)**
+
+The human took the capacity question to the team and got the node pool
+scaled from 1 to 3 nodes (also sized for Chaos Experiment 3 - Node/AZ
+disruption - which needs 3+ nodes to be a credible demonstration in its own
+right, not just enough disks for Kafka+Postgres). All 4 Cluster manifests
+were reapplied and are now live and healthy: catalog-db (1/1), orders-db
+(1/1), inventory-db (2/2), payments-db (1/1). Live cluster state now matches
+git desired state exactly - no more divergence.
 
 **Potential Risks**
 
-- The outbox payloads now match the documented event metadata, but live end-to-end Kafka
-  validation is still needed with the other services.
-- The rebase rewrote the feature branch history, so pushing will require the
-  usual reviewed force-with-lease flow.
+- Cost estimates given to the human for the extra nodes were rough, general
+  Azure pricing knowledge, not verified against the actual subscription's
+  billing - flagged as such at the time.
+- No CPU/memory resource requests are defined yet on any of the 4 Cluster
+  manifests, or anywhere in the application Helm chart's deployment
+  templates - fine at current scale, worth setting before the 6 application
+  pods and HPA-scaled replicas land on top of this.
 
 **Confidence**
 
-Medium
+High - validated against the real CRD schema before writing, and all 4
+clusters are now confirmed healthy live with the node pool at 3 nodes.
 
 **Notes**
 
-Valeria verified Orders locally with `java -jar .\gradle\wrapper\gradle-wrapper.jar clean test`; the build was successful. The normal `gradlew.bat` wrapper fails in this workspace because the `CloudProg&Ops` path is split by `cmd.exe`. Later test reruns should be executed locally by Valeria because the sandbox cannot access the Gradle distribution.
+The exact disk-attach ceiling wasn't visible via `kubectl describe node`
+(it's exposed through the `CSINode` object instead) - worth remembering for
+next time this class of scheduling failure comes up.
+
+---
 
 ### 2026-07-09 17:46
 

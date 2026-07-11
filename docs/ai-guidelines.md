@@ -381,7 +381,20 @@ Additional observations.
 
 # 17. Agent Mistake Log
 
-The project requires documenting at least three AI mistakes.
+The project requires documenting at least three AI mistakes. To quote the prginal document:
+
+``` yaml
+You must verify, and you must show where the agent was wrong. Maintain a
+brief docs/agent-log.md recording at least three concrete cases where an
+agent-produced artifact was incorrect, unsafe, or subtly wrong (e.g. a liveness probe
+checking a downstream dependency, a cause-based alert, an over-permissive
+ServiceAccount, a non-idempotent handler) and how your team caught and corrected
+it. This is graded. Finding the agent's mistakes is the core skill the capstone
+certifies.
+
+```
+
+Only record miastakes similar in gravity of teh ones mentioned before. Do not log trivial mistakes.
 
 Every discovered mistake must be recorded by appending an entry to `docs/ai-mistake-log.md`.
 
