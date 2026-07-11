@@ -56,7 +56,7 @@ notifications:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
-    tag: 4a878ec
+    tag: "7008275"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
