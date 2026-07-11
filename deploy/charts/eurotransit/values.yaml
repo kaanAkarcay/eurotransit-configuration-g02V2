@@ -12,7 +12,7 @@ catalog:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
-    tag: latest
+    tag: "7008275"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
