@@ -12,7 +12,7 @@ catalog:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
-    tag: latest
+    tag: manual-7008275
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -21,7 +21,7 @@ orders:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
-    tag: 0314bd4
+    tag: manual-7008275
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -38,7 +38,7 @@ inventory:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
-    tag: latest
+    tag: manual-7008275
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -47,7 +47,7 @@ payments:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payments
-    tag: latest
+    tag: manual-7008275
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -56,13 +56,11 @@ notifications:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
-    tag: 4a878ec
+    tag: manual-7008275
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
     port: 8080
-imagePullSecrets:
-  - name: acr-secret
 cluster:
   enabled: true
   type: postgresql

@@ -63,7 +63,7 @@ spec:
               value: "postgres"
 
             - name: DB_HOST
-              value: "{{ .Release.Name }}-cluster-rw"
+              value: "orders-db-rw.eurotransit.svc.cluster.local"
 
             - name: DB_PORT
               value: "5432"
@@ -71,17 +71,26 @@ spec:
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: orders-db-app
                   key: dbname
 
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: orders-db-app
                   key: username
 
             - name: DB_PASS
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: orders-db-app
                   key: password
+
+            - name: KAFKA_BROKERS
+              value: "eurotransit-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+
+            - name: PAYMENTS_HOST
+              value: "{{ .Release.Name }}-payments"
+
+            - name: INVENTORY_HOST
+              value: "{{ .Release.Name }}-inventory"

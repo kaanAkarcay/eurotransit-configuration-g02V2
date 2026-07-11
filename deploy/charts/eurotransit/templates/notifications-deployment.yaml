@@ -59,29 +59,5 @@ spec:
             failureThreshold: 24
 
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: "postgres"
-
-            - name: DB_HOST
-              value: "{{ .Release.Name }}-cluster-rw"
-
-            - name: DB_PORT
-              value: "5432"
-
-            - name: DB_NAME
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
-                  key: dbname
-
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
-                  key: username
-
-            - name: DB_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
-                  key: password
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "eurotransit-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"

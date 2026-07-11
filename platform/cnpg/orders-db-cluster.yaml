@@ -5,9 +5,14 @@
 # already expects as its R2DBC default (${DB_NAME:orders_db}) - not a new
 # name invented here, kept consistent with the existing app code.
 #
-# Credentials: CNPG auto-generates a Secret named "orders-db-app" - whoever
-# wires up Orders' Deployment should reference it via secretKeyRef instead of
-# the current localhost/postgres/postgres fallback defaults in application.yaml.
+# Credentials: CNPG auto-generates a Secret named "orders-db-app" - Orders'
+# Deployment references it via secretKeyRef instead of the localhost/postgres/
+# postgres fallback defaults in application.yaml.
+#
+# Lives in "eurotransit", NOT "cnpg-system" - same reasoning as keycloak-db:
+# a Pod's secretKeyRef can only resolve a Secret in its own namespace, and
+# Orders' Deployment runs in "eurotransit", so the generated app secret has
+# to live there too.
 #
 # Applied manually, after the CNPG operator is installed:
 #   kubectl apply -f platform/cnpg/orders-db-cluster.yaml
@@ -15,7 +20,7 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: orders-db
-  namespace: cnpg-system
+  namespace: eurotransit
 spec:
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:17

@@ -62,26 +62,20 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "postgres"
 
-            - name: DB_HOST
-              value: "{{ .Release.Name }}-cluster-rw"
+            - name: SPRING_R2DBC_URL
+              value: "r2dbc:postgresql://inventory-db-rw.eurotransit.svc.cluster.local:5432/inventory_db"
 
-            - name: DB_PORT
-              value: "5432"
-
-            - name: DB_NAME
+            - name: SPRING_R2DBC_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
-                  key: dbname
-
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: inventory-db-app
                   key: username
 
-            - name: DB_PASS
+            - name: SPRING_R2DBC_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: inventory-db-app
                   key: password
+
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "eurotransit-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"

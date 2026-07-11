@@ -3,8 +3,13 @@
 #
 # Credentials: CNPG auto-generates a Secret named "catalog-db-app" containing
 # the app user's username/password - nothing credential-related is committed
-# here. Whoever wires up Catalog's Deployment should reference that Secret's
-# keys via secretKeyRef, not a hardcoded default.
+# here. Catalog's Deployment references that Secret's keys via secretKeyRef,
+# not a hardcoded default.
+#
+# Lives in "eurotransit", NOT "cnpg-system" - same reasoning as keycloak-db:
+# a Pod's secretKeyRef can only resolve a Secret in its own namespace, and
+# Catalog's Deployment runs in "eurotransit", so the generated app secret has
+# to live there too.
 #
 # Applied manually, after the CNPG operator is installed:
 #   kubectl apply -f platform/cnpg/catalog-db-cluster.yaml
@@ -12,7 +17,7 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: catalog-db
-  namespace: cnpg-system
+  namespace: eurotransit
 spec:
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:17

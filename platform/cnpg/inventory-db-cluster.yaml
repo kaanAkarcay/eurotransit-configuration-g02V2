@@ -4,7 +4,12 @@
 # to promote a standby from. The other 3 clusters are single-instance.
 #
 # Credentials: CNPG auto-generates a Secret named "inventory-db-app" -
-# reference it via secretKeyRef when wiring up Inventory's Deployment.
+# Inventory's Deployment references it via secretKeyRef.
+#
+# Lives in "eurotransit", NOT "cnpg-system" - same reasoning as keycloak-db:
+# a Pod's secretKeyRef can only resolve a Secret in its own namespace, and
+# Inventory's Deployment runs in "eurotransit", so the generated app secret
+# has to live there too.
 #
 # Applied manually, after the CNPG operator is installed:
 #   kubectl apply -f platform/cnpg/inventory-db-cluster.yaml
@@ -12,7 +17,7 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: inventory-db
-  namespace: cnpg-system
+  namespace: eurotransit
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:17
