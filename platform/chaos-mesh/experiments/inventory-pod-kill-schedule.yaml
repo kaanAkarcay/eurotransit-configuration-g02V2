@@ -1,0 +1,40 @@
+# Purpose: draft Chaos Mesh experiment for Experiment 2 - Inventory pod kill
+# during reservation processing.
+# Hypothesis: killing one Inventory pod during active reservations does not
+# oversell seats because Orders retries with the same order_id idempotency key
+# and Inventory's database transaction either commits once or rolls back.
+# Expected behavior: Inventory pod restart count increases, Orders may see a
+# transient Stage 1 latency/error spike, but orders converge to terminal states
+# and no duplicate reservation is created.
+# Metrics: Inventory restart count, Orders Stage 1 latency/errors, terminal
+# order count, processed_requests duplicates, seat availability invariants.
+# Rollback: keep this Schedule suspended by default; if manually unsuspended,
+# set spec.suspend back to true and verify the killed pod is replaced.
+# Validation steps: run reservation load, confirm steady state, unsuspend for
+# one controlled run, query database invariants, then resuspend.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: inventory-pod-kill
+  namespace: chaos-mesh
+  labels:
+    app.kubernetes.io/name: chaos-experiment
+    app.kubernetes.io/part-of: eurotransit
+    eurotransit.io/experiment: inventory-pod-kill
+  annotations:
+    eurotransit.io/status: draft
+    eurotransit.io/auto-execute: "false"
+spec:
+  schedule: "@every 24h"
+  suspend: true
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: PodChaos
+  podChaos:
+    action: pod-kill
+    mode: one
+    selector:
+      namespaces:
+        - eurotransit
+      labelSelectors:
+        app.kubernetes.io/name: inventory

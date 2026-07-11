@@ -5,6 +5,71 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-10
+
+**Agent**
+
+Codex — Resilience Engineering agent
+
+**Task**
+
+Complete missing Resilience Owner configuration artifacts after repository-wide
+documentation and platform review.
+
+**Files Modified**
+
+- platform/chaos-mesh/experiments/payments-network-latency-schedule.yaml
+- platform/chaos-mesh/experiments/inventory-pod-kill-schedule.yaml
+- platform/chaos-mesh/experiments/kafka-network-partition-schedule.yaml
+- platform/chaos-mesh/experiments/cnpg-primary-pod-kill-schedule.yaml
+- platform/chaos-mesh/experiments/node-disruption-runbook.md
+- docs/resilience/cluster-recovery-validation.md
+- docs/resilience/probe-review.md
+- docs/ai-logs.md
+
+**Summary**
+
+Reviewed the project docs, Helm chart, Argo CD Applications, CNPG manifests,
+Strimzi manifests, observability config, and existing resilience documentation.
+Added suspended Chaos Mesh draft schedules for the documented Payments latency,
+Inventory pod kill, Kafka partition, and CNPG primary pod kill experiments.
+Added a node disruption runbook because the project hypothesis defines that
+experiment as a manual Kubernetes/AKS operation, not a Chaos Mesh resource.
+Added a cluster stop/start recovery validation runbook and corrected stale
+probe-review wording about the current presence of Strimzi and CNPG platform
+manifests.
+
+**Potential Risks**
+
+- The Chaos Mesh schedules are intentionally draft and suspended; they still
+  require live CRD/schema validation against the installed Chaos Mesh version
+  before a real experiment run.
+- CNPG primary selection uses the documented `role=primary` selector and must be
+  checked against live CNPG pod labels before unsuspending.
+- Kafka partition targeting assumes the Helm release label
+  `app.kubernetes.io/instance=eurotransit` and the Strimzi cluster label
+  `strimzi.io/cluster=eurotransit-kafka`; both must be verified in the live
+  cluster.
+- Current application/runtime readiness remains behind the target architecture:
+  probes, Actuator health groups, app DB wiring, outbox, Keycloak/JWKS, and full
+  six-topic runtime behavior still need implementation or runtime proof.
+- A live AKS check on 2026-07-11 confirmed the cluster can start and recover
+  CNPG/Kafka/Keycloak on 3 nodes, but scaling node pool `cloudlab02` from 3 to 5
+  nodes failed with `ErrCode_InsufficientVCPUQuota` in `polandcentral`
+  (`left regional vcpu quota 0, requested quota 4`).
+
+**Confidence**
+
+Medium
+
+**Notes**
+
+No experiment was enabled or executed. The new manifests are preparation
+artifacts for controlled runtime validation, not evidence that chaos testing has
+passed.
+
+---
+
 ### 2026-07-10 00:20
 
 **Agent**

@@ -58,8 +58,9 @@ current application/configuration repositories.
 - Service -> own database:
   Implemented partial boundary. Orders has R2DBC configuration. Inventory and
   Payments include R2DBC dependencies but only minimal application code was
-  found. The Helm chart currently provides one CNPG chart dependency, not the
-  four database clusters described by the target architecture.
+  found. The configuration repository now contains four platform CNPG Cluster
+  manifests, but the Helm workload templates still inject the older
+  chart-managed database endpoint.
 - Services -> Keycloak/JWKS:
   Documented target boundary. Current application evidence does not show
   `spring-boot-starter-oauth2-resource-server` or JWKS issuer configuration.
@@ -113,7 +114,7 @@ Project documentation:
 |---|---|---|---|---|---|
 | `docs/ai-guidelines.md` | Defines document hierarchy and requires inconsistencies to be reported before relying on assumptions. | Requires verification, minimal blast radius, and logging of significant AI sessions. | Yes. Governs how conflicting docs and repo state are handled. | Current for process rules. | Mentions `docs/ai-mistake-log.md`, while prior project state uses `docs/ai-logs.md` and `docs/dod.md` mentions `docs/agent-log.md`. |
 | `docs/ai-logs.md` | Records prior decisions: Catalog DB and Keycloak were added to architecture docs; Chaos Mesh was added as GitOps prerequisite. | Notes known risks that implementation/manifests for Catalog DB and Keycloak are not complete. | Yes. Confirms that some architecture docs are ahead of implementation. | Current as project history. | Confirms docs/application drift rather than resolving it. |
-| `docs/architecture-design.md` | Target architecture: five backend services, six Kafka topics, Orders as four-stage Kafka-driven orchestrator, Orders->Inventory, Orders->Payments, Payments->gateway, Keycloak, Strimzi, four CNPG clusters. | Liveness/readiness, service ownership, database-per-service, graceful degradation for Notifications, Chaos Mesh fault-injection target. | Yes. Defines target probe invariants. | Partially stale relative to current repos. | Config repo has one CNPG chart dependency, no Strimzi folder, no Keycloak manifests; app repo does not implement full six-topic pipeline or Actuator. |
+| `docs/architecture-design.md` | Target architecture: five backend services, six Kafka topics, Orders as four-stage Kafka-driven orchestrator, Orders->Inventory, Orders->Payments, Payments->gateway, Keycloak, Strimzi, four CNPG clusters. | Liveness/readiness, service ownership, database-per-service, graceful degradation for Notifications, Chaos Mesh fault-injection target. | Yes. Defines target probe invariants. | Partially stale relative to current repos. | Config repo now has Strimzi and four CNPG platform manifests, but application Helm DB wiring still points at the chart-managed cluster endpoint and no Keycloak manifests were found; app repo does not implement full six-topic pipeline or Actuator. |
 | `docs/eurotransit-contract.md` | Target contract v3: six topics, Orders writes outbox, Stage 1 calls Inventory, Stage 2 calls Payments, payment-authorized/payment-failed drive later stages. | Circuit breaker on Orders->Payments, Payments->gateway circuit breaker, Kafka recovery through outbox, no Kafka in request path. | Yes. Defines intended critical-path dependencies and failure boundaries. | Partially stale relative to current app repo. | App repo publishes `order-placed` directly, has no outbox implementation found, consumes `inventory-reserved` and `inventory-reservation-failed`, and does not show `payment-authorized` or `payment-failed`. |
 | `docs/dod.md` | Target DoD: six Kafka topics, outbox, Inventory/Payments idempotency, Keycloak auth, GitOps, observability. | Explicitly requires liveness probes not to check downstream dependencies and readiness to reflect ability to serve traffic. | Yes. Directly relevant to probe review. | Current as acceptance criteria; partially ahead of implementation. | DoD expects operational topics and resilience mechanisms not fully present in current app/config repos. |
 | `docs/chaos-experiment-hypotheses.md` | Target chaos plan: Payments latency, Inventory pod kill, node disruption, Kafka partition, CNPG failover. | Validates circuit breakers, no oversell, no Kafka loss, no manual restart after recovery, Catalog isolation. | Yes. Defines runtime tests that probe review must support. | Partially stale relative to current repos. | Experiments assume deployed Strimzi, Chaos Mesh, CNPG failover topology, Orders->Inventory, and outbox behaviour not currently present in inspected repos/cluster. |
@@ -255,8 +256,9 @@ Repository evidence:
   `payment-authorized` or `payment-failed` topic usage, no outbox relay
   implementation, no Payments external gateway client, and no Keycloak/JWKS
   resource-server configuration.
-- Current Helm values define one CNPG chart dependency, while the target
-  architecture describes four service-owned CNPG clusters.
+- Current config repo has explicit platform manifests for the four target CNPG
+  clusters, while the Helm workload templates still inject the older
+  chart-managed `{{ .Release.Name }}-cluster-rw` endpoint.
 
 Impact on critical path:
 
@@ -361,12 +363,12 @@ Yes. The log entry is traceability only.
 
 ## Current Blockers
 
-BLOCKED — deployment/runtime dependency unavailable.
+BLOCKED — deployment/runtime dependency unavailable at the time of review.
 
-Lab02Cluster currently does not contain the EuroTransit workloads or required
-platform components. The live cluster check showed only system namespaces and
-system workloads; `eurotransit`, `argocd`, Kafka/Strimzi, CNPG, Chaos Mesh, and
-observability components were not present at review time.
+Lab02Cluster did not contain the EuroTransit workloads or required platform
+components during the original live check. The live cluster check showed only
+system namespaces and system workloads; `eurotransit`, `argocd`, Kafka/Strimzi,
+CNPG, Chaos Mesh, and observability components were not present at review time.
 
 Blocked resilience validations:
 
@@ -390,7 +392,7 @@ These items are not marked failed. They remain blocked until deployment exists.
 | RV-004 | Kafka unavailable | Kafka-dependent services do not enter liveness restart loops. | Restart counts, Kafka client logs, Kubernetes events, liveness endpoint responses. | No cascading restart churn. | Experiment 4 | Pending deployment; current Orders Kafka usage supports a reduced Kafka outage test once probes exist. |
 | RV-005 | Dependency restored | Affected services reconnect automatically. | Logs, readiness transitions, restart count, recovery metrics. | No manual pod restart required. | Recovery validation | Pending deployment and implemented dependency paths. |
 | RV-006 | Keycloak/JWKS unavailable | Auth dependency outage does not kill otherwise healthy services. | Service restart counts, liveness endpoint, auth/JWKS logs. | No liveness-driven restart from temporary JWKS outage. | Keycloak resilience validation | Blocked: resource-server/JWKS config not found in inspected app code. |
-| RV-007 | CNPG failover | Database failover affects readiness/business operations without inappropriate liveness restart loops. | CNPG status, pod restart counts, readiness transitions, DB reconnect logs. | Services reconnect without manual pod restart. | Experiment 5 | Blocked: current config has one CNPG dependency, not target four-cluster topology. |
+| RV-007 | CNPG failover | Database failover affects readiness/business operations without inappropriate liveness restart loops. | CNPG status, pod restart counts, readiness transitions, DB reconnect logs. | Services reconnect without manual pod restart. | Experiment 5 | Partially blocked: target CNPG platform manifests exist, but workload DB wiring and runtime deployment must be confirmed before testing. |
 
 ## Resilience Owner Assessment
 
@@ -466,8 +468,10 @@ Stale or conflicting assumptions found:
   Payments app code.
 - The target docs describe Keycloak/JWKS validation. No resource-server or JWKS
   configuration was found in the inspected application modules.
-- The target docs describe four service-owned CNPG clusters. The current Helm
-  chart has one CNPG chart dependency configured through `cluster.enabled`.
+- The target docs describe four service-owned CNPG clusters. The current config
+  repo now contains those platform manifests under `platform/cnpg`, but the
+  Helm workload templates still point application DB env vars to the
+  chart-managed `{{ .Release.Name }}-cluster-rw` service.
 - `docs/dod.md` and `docs/ai-guidelines.md` use different agent-log filenames
   (`docs/agent-log.md`, `docs/ai-logs.md`, and the guidelines' older
   `docs/ai-mistake-log.md` instruction).
@@ -490,7 +494,7 @@ Probe-review statements changed because of the audit:
 - Kafka validation now distinguishes the documented six-topic pipeline from the
   reduced topic set found in the inspected Orders application.
 - CNPG validation now distinguishes the documented four-cluster topology from
-  the current single Helm chart dependency.
+  the current mismatch between platform CNPG manifests and workload DB wiring.
 - Runtime validation backlog now marks each test as pending deployment, blocked
   by missing implementation, or supported by current code once probes exist.
 
@@ -506,8 +510,9 @@ Remaining ambiguities requiring team confirmation:
 - Whether payment result topics are still required as executable stages or
   should become audit-only topics in a newer architecture not yet reflected in
   docs.
-- Whether the configuration repository should move from one CNPG dependency to
-  four explicit service-owned CNPG clusters before CNPG failover validation.
+- Whether the application Helm chart should be rewired from the older
+  chart-managed CNPG dependency to the explicit service-owned CNPG clusters
+  before CNPG failover validation.
 
 Overall relevance of probe-review.md: High
 

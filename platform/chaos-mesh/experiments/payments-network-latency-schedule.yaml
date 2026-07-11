@@ -1,0 +1,46 @@
+# Purpose: draft Chaos Mesh experiment for Experiment 1 - Payments latency.
+# Hypothesis: when Payments latency exceeds the Orders timeout budget, Orders'
+# circuit breaker opens, new affected orders fail fast, compensation releases
+# reservations, and Catalog remains unaffected.
+# Expected behavior: Orders does not enter liveness restart churn; readiness and
+# business metrics show the degraded payment path; Catalog metrics stay stable.
+# Metrics: Orders p99 checkout latency, Orders non-5xx rate, circuit-breaker
+# state, order-failed rate, Inventory compensation count, Catalog RED metrics,
+# pod restart counters.
+# Rollback: keep this Schedule suspended by default; if manually unsuspended,
+# set spec.suspend back to true or delete this Schedule and confirm no active
+# NetworkChaos remains.
+# Validation steps: generate checkout load, unsuspend for one controlled run,
+# observe dashboards/logs, verify compensation, then resuspend and confirm
+# recovery without manual pod restarts.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: payments-network-latency
+  namespace: chaos-mesh
+  labels:
+    app.kubernetes.io/name: chaos-experiment
+    app.kubernetes.io/part-of: eurotransit
+    eurotransit.io/experiment: payments-network-latency
+  annotations:
+    eurotransit.io/status: draft
+    eurotransit.io/auto-execute: "false"
+spec:
+  schedule: "@every 24h"
+  suspend: true
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: NetworkChaos
+  networkChaos:
+    action: delay
+    mode: all
+    selector:
+      namespaces:
+        - eurotransit
+      labelSelectors:
+        app.kubernetes.io/name: payments
+    delay:
+      latency: 3s
+      correlation: "100"
+      jitter: 0ms
+    duration: 60s
