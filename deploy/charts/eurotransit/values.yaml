@@ -2,7 +2,7 @@ namespace: eurotransit
 frontend:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/frontend
+    repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -11,8 +11,8 @@ frontend:
 catalog:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/catalog
-    tag: c96c7d1
+    repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
+    tag: latest
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -20,17 +20,25 @@ catalog:
 orders:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/orders
-    tag: c96c7d1
+    repository: lab02clusterregistry.azurecr.io/eurotransit/orders
+    tag: 0314bd4
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
     port: 8080
+canary:
+  orders:
+    enabled: false
+    host: g02.cpo2026.it
+    stableWeight: 90
+    canaryWeight: 10
+    stableServiceName: ""
+    canaryServiceName: eurotransit-orders-canary
 inventory:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/inventory
-    tag: c96c7d1
+    repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
+    tag: latest
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -38,8 +46,8 @@ inventory:
 payments:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/payments
-    tag: c96c7d1
+    repository: lab02clusterregistry.azurecr.io/eurotransit/payments
+    tag: latest
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -47,8 +55,8 @@ payments:
 notifications:
   replicaCount: 1
   image:
-    repository: kaantryoutregistry.azurecr.io/eurotransit/notifications
-    tag: c96c7d1
+    repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
+    tag: 4a878ec
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP

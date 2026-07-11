@@ -21,6 +21,10 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
 
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: payments
 
@@ -81,4 +85,3 @@ spec:
                 secretKeyRef:
                   name: "{{ .Release.Name }}-cluster-app"
                   key: password
-

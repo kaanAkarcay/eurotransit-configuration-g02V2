@@ -1,0 +1,22 @@
+# Postgres cluster for Payments.
+# Single instance - not the Chaos Experiment 5 target (that's inventory-db).
+#
+# Credentials: CNPG auto-generates a Secret named "payments-db-app" -
+# reference it via secretKeyRef when wiring up Payments' Deployment.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/payments-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: payments-db
+  namespace: cnpg-system
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  bootstrap:
+    initdb:
+      database: payments_db
+      owner: payments

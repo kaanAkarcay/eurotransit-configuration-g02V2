@@ -1,0 +1,28 @@
+# Postgres cluster for Keycloak.
+# Single instance - not a chaos-experiment target.
+#
+# Lives in "eurotransit", NOT "cnpg-system" like the other 4 clusters -
+# deliberate exception. The Keycloak CRD's db.usernameSecret/passwordSecret
+# fields have no namespace option; they only resolve in the same namespace as
+# the Keycloak CR itself. Putting this cluster in cnpg-system (matching the
+# other 4) would generate its credentials Secret somewhere Keycloak can't
+# read it. CNPG's own operator is cluster-scoped and already manages Cluster
+# resources across namespaces, so this doesn't cause the equivalent problem
+# in reverse.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/keycloak-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: eurotransit
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  bootstrap:
+    initdb:
+      database: keycloak_db
+      owner: keycloak

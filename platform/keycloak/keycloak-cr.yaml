@@ -1,0 +1,50 @@
+# The Keycloak server instance itself.
+#
+# Verified against the actual Keycloak Operator 26.7.0 CRD
+# (keycloaks.k8s.keycloak.org, group k8s.keycloak.org, versions
+# v2beta1/v2alpha1) - not assumed from memory:
+# - db credentials are referenced via usernameSecret/passwordSecret, which
+#   only resolve in this CR's own namespace (see keycloak-db-cluster.yaml)
+# - there is no first-class "path prefix" field; path-based deployment goes
+#   through additionalOptions, which maps directly to Keycloak's own config
+#   keys (https://www.keycloak.org/server/all-config) - http-relative-path
+#   is the key that makes Keycloak generate URLs consistent with the /auth
+#   prefix Traefik routes to it
+# - bootstrapAdmin.user.secret references a Secret with username/password
+#   keys; unlike CNPG, Keycloak does NOT auto-generate this - it must be
+#   created and sealed separately (see the accompanying instructions)
+#
+# Applied manually, after keycloak-db-cluster.yaml is Ready and the admin
+# credentials SealedSecret exists:
+#   kubectl apply -f platform/keycloak/keycloak-cr.yaml
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: eurotransit-keycloak
+  namespace: eurotransit
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: keycloak-db-rw.eurotransit.svc.cluster.local
+    port: 5432
+    database: keycloak_db
+    usernameSecret:
+      name: keycloak-db-app
+      key: username
+    passwordSecret:
+      name: keycloak-db-app
+      key: password
+  hostname:
+    hostname: g02.cpo2026.it
+  http:
+    httpEnabled: true
+  ingress:
+    enabled: true
+    className: traefik
+  additionalOptions:
+    - name: http-relative-path
+      value: /auth
+  bootstrapAdmin:
+    user:
+      secret: keycloak-admin-credentials

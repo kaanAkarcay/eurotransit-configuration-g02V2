@@ -1,0 +1,27 @@
+# Postgres cluster for Orders.
+# Single instance - not the Chaos Experiment 5 target (that's inventory-db).
+#
+# database name matches what orders/src/main/resources/application.yaml
+# already expects as its R2DBC default (${DB_NAME:orders_db}) - not a new
+# name invented here, kept consistent with the existing app code.
+#
+# Credentials: CNPG auto-generates a Secret named "orders-db-app" - whoever
+# wires up Orders' Deployment should reference it via secretKeyRef instead of
+# the current localhost/postgres/postgres fallback defaults in application.yaml.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/orders-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: orders-db
+  namespace: cnpg-system
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  bootstrap:
+    initdb:
+      database: orders_db
+      owner: orders

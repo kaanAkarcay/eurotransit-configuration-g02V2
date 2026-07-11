@@ -5,6 +5,260 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-10 18:20
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Deploy Keycloak (operator, database, realm/client/test user) on
+`feature/keycloak`, per the architecture's already-approved pattern B
+(distributed JWT validation).
+
+**Files Modified**
+
+- platform/cnpg/keycloak-db-cluster.yaml (created)
+- platform/keycloak/keycloak-cr.yaml (created)
+- platform/keycloak/realm-import.yaml (created)
+- platform/keycloak/keycloak-admin-credentials-sealed.yaml (created)
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Persistence (real Postgres) and install method (official Operator) were
+human decisions. Everything else was verified, not assumed: the Operator has
+no Helm chart at all (the GitHub repo literally named "keycloak-operator" is
+archived - old WildFly-based project, unrelated to the current Quarkus-based
+one); the real install command
+(`kubectl apply -k 'github.com/keycloak/keycloak-k8s-resources/kubernetes?ref=26.7.0'`)
+came from the human fetching the official docs directly, since keycloak.org
+wasn't reachable from this environment. First install attempt landed in the
+wrong namespace (`keycloak`, matching the doc's example, instead of
+`eurotransit`, the actual architecture decision) - caught and corrected.
+
+CRD inspection (group `k8s.keycloak.org`) found that `db.usernameSecret`/
+`passwordSecret` have no namespace field - same-namespace-only - so
+`keycloak-db` had to live in `eurotransit` instead of `cnpg-system` like the
+other 4 CNPG clusters, a technical necessity rather than a style choice.
+Path-based routing (`/auth`) goes through `additionalOptions` +
+`http-relative-path`, the only mechanism available since there's no
+first-class path field.
+
+Separately discovered the sealed-secrets controller was never actually
+installed on this cluster at all, despite an existing committed SealedSecret
+referencing one - installed it properly (Bitnami chart 2.19.1, correcting a
+wrong repo URL guess along the way). All 5 pieces (operator, keycloak-db,
+sealed admin secret, Keycloak server, realm import) are confirmed healthy
+live, not just applied without error - `KeycloakRealmImport` shows
+`Done: True`, `HasErrors: False`.
+
+"Service accounts" from the original task phrasing was deliberately not
+implemented - no service in the finalized architecture authenticates as a
+client to obtain its own token (pattern B only validates incoming tokens),
+so there's no concrete use case for one. Flagged to the human rather than
+invented.
+
+**Potential Risks**
+
+- `platform/argocd/private-config-repo-sealedsecret.yaml` (pre-existing) was
+  sealed against a controller that no longer exists (or never existed on
+  this cluster) - it's currently undecryptable and needs resealing against
+  the controller installed here, separate follow-up not yet done.
+- Test user's password is intentionally plaintext in `realm-import.yaml`
+  (throwaway demo credential, not treated as a real secret) - worth
+  confirming the team is fine with that tradeoff before the repo goes public
+  anywhere.
+
+**Confidence**
+
+High - every structural claim (CRD schema, operator distribution, secret
+scoping) was verified against the real source or the live cluster, not
+memory. The one thing not yet done is resealing the orphaned Argo CD secret.
+
+**Notes**
+
+Two separate transient network blips (DNS resolution failing mid-session)
+were unrelated to any of the above - retried and cleared on their own each
+time, not a sign of anything wrong with the manifests.
+
+---
+
+### 2026-07-10 00:20
+
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Install the CloudNativePG operator and create Postgres clusters for all 4
+services (catalog, orders, inventory, payments), on `feature/cnpg-clusters`.
+
+**Files Modified**
+
+- platform/cnpg/operator-values.yaml (created)
+- platform/cnpg/catalog-db-cluster.yaml (created)
+- platform/cnpg/orders-db-cluster.yaml (created)
+- platform/cnpg/inventory-db-cluster.yaml (created)
+- platform/cnpg/payments-db-cluster.yaml (created)
+Install the Strimzi Kafka operator (KRaft) and create the 6 Kafka topics for
+the money path, on `feature/strimzi-kafka-topics`.
+
+**Files Modified**
+
+- platform/strimzi/operator-values.yaml (created)
+- platform/strimzi/kafka-cluster.yaml (created)
+- platform/strimzi/kafka-topics.yaml (created)
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Scope was widened from the original 3 clusters to all 4 after checking
+ai-logs.md/dev/main confirmed the Catalog-DB architecture change (from a
+separate session) was never reversed. Chart version, namespace, instance
+counts, and Postgres version were human decisions; Postgres 17 was confirmed
+to actually exist in the registry before use (direct manifest check), not
+assumed. `inventory-db` got 2 instances (the Chaos Experiment 5 target), the
+other 3 got 1 each.
+
+Applying all 4 hit a real infrastructure limit, not a manifest problem: the
+node's Azure Disk CSI driver allows a maximum of 4 attached volumes
+(confirmed via `kubectl get csinode ... -o yaml`), and Strimzi's 3 Kafka
+broker PVCs already consume 3 of those before any Postgres cluster is even
+considered. Root-caused via `FailedScheduling` events rather than guessed.
+Resolved pragmatically for now: `orders-db` (the only service with real
+application code to test against) is live and healthy; `catalog-db`,
+`inventory-db`, and `payments-db` were deliberately deleted from the live
+cluster to keep `orders-db` unblocked, while their manifests stay committed
+and untouched. Full reconciliation is pending a node-pool scaling decision
+the human is taking to the team.
+
+**Resolved (same branch, after node pool scaled)**
+
+The human took the capacity question to the team and got the node pool
+scaled from 1 to 3 nodes (also sized for Chaos Experiment 3 - Node/AZ
+disruption - which needs 3+ nodes to be a credible demonstration in its own
+right, not just enough disks for Kafka+Postgres). All 4 Cluster manifests
+were reapplied and are now live and healthy: catalog-db (1/1), orders-db
+(1/1), inventory-db (2/2), payments-db (1/1). Live cluster state now matches
+git desired state exactly - no more divergence.
+
+**Potential Risks**
+
+- Cost estimates given to the human for the extra nodes were rough, general
+  Azure pricing knowledge, not verified against the actual subscription's
+  billing - flagged as such at the time.
+- No CPU/memory resource requests are defined yet on any of the 4 Cluster
+  manifests, or anywhere in the application Helm chart's deployment
+  templates - fine at current scale, worth setting before the 6 application
+  pods and HPA-scaled replicas land on top of this.
+
+**Confidence**
+
+High - validated against the real CRD schema before writing, and all 4
+clusters are now confirmed healthy live with the node pool at 3 nodes.
+
+**Notes**
+
+The exact disk-attach ceiling wasn't visible via `kubectl describe node`
+(it's exposed through the `CSINode` object instead) - worth remembering for
+next time this class of scheduling failure comes up.
+
+---
+
+### 2026-07-09 17:46
+
+**Agent**
+
+Codex — Resilience Engineering agent
+
+**Task**
+
+Static review of EuroTransit Helm liveness, readiness, and startup probes.
+
+**Files Modified**
+
+- docs/ai-logs.md
+
+**Summary**
+
+Reviewed the configuration repository Helm probe templates and the available
+application repository health configuration. Found that the Helm chart points
+backend probes at `/actuator/health/liveness` and
+`/actuator/health/readiness`, while the application modules do not currently
+include Spring Boot Actuator or explicit health-group configuration.
+
+**Potential Risks**
+
+- This was a static review only because the current AKS cluster has no
+  EuroTransit workloads or platform components deployed.
+- Runtime behaviour under dependency failures remains unverified until the
+  services are deployed.
+- The smallest functional fix likely belongs in the application repository:
+  add Actuator and service-specific health-group semantics before relying on
+  the existing Helm probe paths.
+
+**Confidence**
+
+High for the static mismatch; medium for service-specific runtime conclusions
+until the application health endpoints are implemented and tested.
+
+**Notes**
+
+No probe configuration was changed during this review.
+
+
+---
+
+### 2026-07-09 11:20
+
+**Agent**
+
+Codex — Resilience Engineering agent
+
+**Task**
+
+Install Chaos Mesh through the existing GitOps/configuration repository.
+
+**Files Modified**
+
+- platform/argocd/chaos-mesh-application.yaml
+- docs/ai-logs.md
+
+**Summary**
+
+Added a GitOps-managed Argo CD Application for the official Chaos Mesh Helm
+chart. The configuration installs Chaos Mesh into the `chaos-mesh` namespace,
+uses AKS/containerd runtime settings, keeps the dashboard internal, and supports
+the documented `PodChaos` and `NetworkChaos` experiment hypotheses.
+
+**Potential Risks**
+
+- Live installation depends on the Argo CD instance being able to reach
+  `https://charts.chaos-mesh.org` and `ghcr.io`.
+- `ServerSideApply=true` is used to reduce CRD apply issues; this assumes the
+  deployed Argo CD version supports that sync option.
+- The team should converge on one log filename convention:
+  `docs/ai-guidelines.md` uses `docs/ai-logs.md`, while `docs/dod.md` mentions
+  `docs/agent-log.md`.
+
+**Confidence**
+
+Medium
+
+**Notes**
+
+This change installs the Chaos Mesh platform prerequisite only. It does not
+define or run any chaos experiments. During implementation, Codex initially
+mistook `docs/ai-logs.md` as missing because it had inspected an older branch;
+after switching to `origin/dev`, the file existed. The overwrite was detected
+with `git diff`/`git show HEAD:docs/ai-logs.md` and corrected.
+
+---
+
 ### 2026-07-08 20:07
 
 **Agent**
@@ -65,3 +319,110 @@ alignment was verified by character count.
 Changes were explicitly approved by the human developer before implementation,
 per ai-guidelines.md §5 and §19. Scope was kept to the two architecture
 documents plus this log, with follow-up items surfaced rather than actioned.
+
+---
+
+### 2026-07-08 17:00
+
+**Agent**
+
+Codex
+
+**Task**
+
+Add `event_timestamp` to the shared Kafka event schema after human approval.
+
+**Files Modified**
+
+- `tasks-valeria.md`
+- `eurotransit-contract.md`
+- `architecture-design.md`
+- `dod.md`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/service/OrderService.kt`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/OrderConsumer.kt`
+- `eurotransit-configuration-g02/docs/eurotransit-contract.md`
+- `eurotransit-configuration-g02/docs/architecture-design.md`
+- `eurotransit-configuration-g02/docs/dod.md`
+- `eurotransit-configuration-g02/docs/ai-logs/ai-logs-valeria.md`
+
+**Summary**
+
+Updated the Kafka event contract to require `event_timestamp`, documented its
+producer-created UTC semantics, and added the field to the Orders event DTOs and
+emitted events currently present in the codebase.
+
+**Potential Risks**
+
+- Other services and future event producers/consumers must include the same field
+  when their Kafka handlers are implemented.
+- Existing Kafka messages without `event_timestamp` would not match the updated
+  required event DTOs.
+
+**Confidence**
+
+Medium
+
+**Notes**
+
+This was a contract change requested explicitly by the human developer after
+discussion. Verified with Orders `clean test`; the Gradle wrapper jar was invoked
+directly because `gradlew.bat` does not handle the `CloudProg&Ops` path
+correctly.
+
+---
+
+### 2026-07-08 16:33
+
+**Agent**
+
+Codex
+
+**Task**
+
+Execute Valeria-owned tasks that can be completed locally without waiting for
+other team members or making unapproved architecture decisions.
+
+**Files Modified**
+
+- `tasks-valeria.md`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/service/OrderService.kt`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/OrderConsumer.kt`
+- `eurotransit-application-g02/orders/src/main/resources/application.yaml`
+- `eurotransit-application-g02/.github/workflows/ci.yaml`
+- `eurotransit-configuration-g02/platform/argocd/eurotransit-application.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/values.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/templates/ingress.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/templates/orders-canary-traefikservice.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/templates/orders-canary-ingressroute.yaml`
+- `eurotransit-configuration-g02/docs/deployment-strategies.md`
+- `eurotransit-configuration-g02/docs/ai-logs/ai-logs-valeria.md`
+
+**Summary**
+
+Aligned Orders Kafka event DTO JSON names with the snake_case contract, updated
+Orders topic configuration to the six current topics, enabled Argo CD automated
+sync in the Application manifest, fixed CI image/tag handling for changed-service
+builds, added a disabled-by-default Orders canary TraefikService scaffold,
+documented deployment strategies, and created a Valeria-only task tracker.
+
+**Potential Risks**
+
+- The explicit event timestamp task is intentionally not implemented because it
+  changes the API Contract and needs human approval.
+- JWT and service-to-service authentication are blocked because Architecture
+  Design currently says authentication/JWT/OAuth are not required.
+- Canary configuration is scaffolded but disabled by default; it still requires a
+  canary service and live validation before promotion.
+- Blue/green implementation still needs a human decision on scope and routing
+  model.
+
+**Confidence**
+
+Medium
+
+**Notes**
+
+Verified with `helm template` both with canary disabled and with
+`canary.orders.enabled=true`. Verified Orders with a forced `clean test`; the
+Gradle batch wrapper fails in this workspace path because `CloudProg&Ops` is
+split by `cmd.exe`, so the Gradle wrapper jar was invoked directly.

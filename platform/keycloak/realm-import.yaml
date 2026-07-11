@@ -1,0 +1,49 @@
+# Declares the realm, the frontend's OIDC client, and a demo test user -
+# this is what makes "Configure realm, clients, service accounts and test
+# users" a git-committed, reproducible artifact instead of manual admin-UI
+# clicking that only exists on whoever's cluster did it.
+#
+# `frontend` is a public client (no secret - it's delivered to the browser,
+# so a confidential client secret would be exposed anyway) using
+# Authorization Code + PKCE, the standard, secure pattern for a browser SPA.
+#
+# The test user's password is intentionally plaintext here, not sealed -
+# it's a throwaway demo credential with no access to anything sensitive by
+# itself (the whole point of pattern B is that authorization happens per-
+# service via the JWT, not via this account being trusted with anything).
+# Treating it the same as the DB/admin credentials would be over-engineering
+# for what it actually protects.
+#
+# Applied manually, after keycloak-cr.yaml's Keycloak instance is Ready:
+#   kubectl apply -f platform/keycloak/realm-import.yaml
+apiVersion: k8s.keycloak.org/v2beta1
+kind: KeycloakRealmImport
+metadata:
+  name: eurotransit-realm
+  namespace: eurotransit
+spec:
+  keycloakCRName: eurotransit-keycloak
+  realm:
+    realm: eurotransit
+    enabled: true
+    clients:
+      - clientId: frontend
+        publicClient: true
+        protocol: openid-connect
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        redirectUris:
+          - "https://g02.cpo2026.it/*"
+        webOrigins:
+          - "https://g02.cpo2026.it"
+        attributes:
+          pkce.code.challenge.method: S256
+    users:
+      - username: testuser
+        enabled: true
+        emailVerified: true
+        email: testuser@eurotransit.local
+        credentials:
+          - type: password
+            value: "ChangeMe123!"
+            temporary: false
