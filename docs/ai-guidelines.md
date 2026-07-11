@@ -17,6 +17,8 @@ These guidelines apply to **all AI agents**, including (but not limited to):
 
 The purpose of this document is to ensure that every contribution follows the same architecture, coding standards, and project conventions regardless of which AI generated it.
 
+This is a production-grade project with zero tolerance for shortcuts. The system must withstand real-world operational challenges: traffic spikes, chaos experiments, power failures, and infrastructure breakage.
+
 **Human developers always have the final decision.**
 
 ---

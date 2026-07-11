@@ -13,10 +13,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: eurotransit
   syncPolicy:
-  # at the moment we are not using automated sync, we have to activate when there will be services
-    #automated:
-    #  prune: true
-    #  selfHeal: true
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
     retry:

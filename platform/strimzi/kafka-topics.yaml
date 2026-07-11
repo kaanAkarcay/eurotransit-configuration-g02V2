@@ -1,0 +1,100 @@
+# The 6 Kafka topics for the EuroTransit money path (see docs/eurotransit-contract.md §2).
+# Orders is the sole producer of all 6; see the contract for consumer details.
+#
+# metadata.name uses dashes (Kubernetes resource-name-safe) while spec.topicName
+# carries the actual dotted Kafka topic name - Strimzi's documented way to
+# handle topic names that aren't ideal as K8s resource names, and it also
+# sidesteps Kafka's own dot/underscore metric-name collision warning.
+#
+# 3 partitions / 3 replicas / min.insync.replicas 2 per topic, matching the
+# 3-node cluster and the min.insync.replicas=2 default set on the Kafka
+# cluster itself (kafka-cluster.yaml) - repeated explicitly here rather than
+# relying only on the cluster default, in case topics are ever created
+# before that default is in place.
+#
+# Applied manually, after the Kafka cluster is running:
+#   kubectl apply -f platform/strimzi/kafka-topics.yaml
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: eurotransit-order-placed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: eurotransit-kafka
+spec:
+  topicName: eurotransit.order-placed
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: eurotransit-inventory-reserved
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: eurotransit-kafka
+spec:
+  topicName: eurotransit.inventory-reserved
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: eurotransit-payment-authorized
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: eurotransit-kafka
+spec:
+  topicName: eurotransit.payment-authorized
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: eurotransit-payment-failed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: eurotransit-kafka
+spec:
+  topicName: eurotransit.payment-failed
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: eurotransit-order-confirmed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: eurotransit-kafka
+spec:
+  topicName: eurotransit.order-confirmed
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: eurotransit-order-failed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: eurotransit-kafka
+spec:
+  topicName: eurotransit.order-failed
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2

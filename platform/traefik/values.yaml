@@ -8,8 +8,8 @@ service:
   annotations:
     service.beta.kubernetes.io/azure-dns-label-name: g02-entrypoint
 
-logs:
-  general:
-    level: DEBUG
-  access:
-    enabled: true
+log:
+  level: DEBUG
+
+accessLog:
+  enabled: true

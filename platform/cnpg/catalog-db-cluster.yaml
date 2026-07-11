@@ -1,0 +1,24 @@
+# Postgres cluster for Catalog.
+# Single instance - no failover target, not part of any chaos experiment.
+#
+# Credentials: CNPG auto-generates a Secret named "catalog-db-app" containing
+# the app user's username/password - nothing credential-related is committed
+# here. Whoever wires up Catalog's Deployment should reference that Secret's
+# keys via secretKeyRef, not a hardcoded default.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/catalog-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: catalog-db
+  namespace: cnpg-system
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  bootstrap:
+    initdb:
+      database: catalog_db
+      owner: catalog

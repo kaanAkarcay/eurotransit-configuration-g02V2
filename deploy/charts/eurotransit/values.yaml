@@ -26,6 +26,14 @@ orders:
   service:
     type: ClusterIP
     port: 8080
+canary:
+  orders:
+    enabled: false
+    host: g02.cpo2026.it
+    stableWeight: 90
+    canaryWeight: 10
+    stableServiceName: ""
+    canaryServiceName: eurotransit-orders-canary
 inventory:
   replicaCount: 1
   image:

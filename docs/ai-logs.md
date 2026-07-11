@@ -5,6 +5,89 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-10 00:20
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Install the CloudNativePG operator and create Postgres clusters for all 4
+services (catalog, orders, inventory, payments), on `feature/cnpg-clusters`.
+
+**Files Modified**
+
+- platform/cnpg/operator-values.yaml (created)
+- platform/cnpg/catalog-db-cluster.yaml (created)
+- platform/cnpg/orders-db-cluster.yaml (created)
+- platform/cnpg/inventory-db-cluster.yaml (created)
+- platform/cnpg/payments-db-cluster.yaml (created)
+Install the Strimzi Kafka operator (KRaft) and create the 6 Kafka topics for
+the money path, on `feature/strimzi-kafka-topics`.
+
+**Files Modified**
+
+- platform/strimzi/operator-values.yaml (created)
+- platform/strimzi/kafka-cluster.yaml (created)
+- platform/strimzi/kafka-topics.yaml (created)
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Scope was widened from the original 3 clusters to all 4 after checking
+ai-logs.md/dev/main confirmed the Catalog-DB architecture change (from a
+separate session) was never reversed. Chart version, namespace, instance
+counts, and Postgres version were human decisions; Postgres 17 was confirmed
+to actually exist in the registry before use (direct manifest check), not
+assumed. `inventory-db` got 2 instances (the Chaos Experiment 5 target), the
+other 3 got 1 each.
+
+Applying all 4 hit a real infrastructure limit, not a manifest problem: the
+node's Azure Disk CSI driver allows a maximum of 4 attached volumes
+(confirmed via `kubectl get csinode ... -o yaml`), and Strimzi's 3 Kafka
+broker PVCs already consume 3 of those before any Postgres cluster is even
+considered. Root-caused via `FailedScheduling` events rather than guessed.
+Resolved pragmatically for now: `orders-db` (the only service with real
+application code to test against) is live and healthy; `catalog-db`,
+`inventory-db`, and `payments-db` were deliberately deleted from the live
+cluster to keep `orders-db` unblocked, while their manifests stay committed
+and untouched. Full reconciliation is pending a node-pool scaling decision
+the human is taking to the team.
+
+**Resolved (same branch, after node pool scaled)**
+
+The human took the capacity question to the team and got the node pool
+scaled from 1 to 3 nodes (also sized for Chaos Experiment 3 - Node/AZ
+disruption - which needs 3+ nodes to be a credible demonstration in its own
+right, not just enough disks for Kafka+Postgres). All 4 Cluster manifests
+were reapplied and are now live and healthy: catalog-db (1/1), orders-db
+(1/1), inventory-db (2/2), payments-db (1/1). Live cluster state now matches
+git desired state exactly - no more divergence.
+
+**Potential Risks**
+
+- Cost estimates given to the human for the extra nodes were rough, general
+  Azure pricing knowledge, not verified against the actual subscription's
+  billing - flagged as such at the time.
+- No CPU/memory resource requests are defined yet on any of the 4 Cluster
+  manifests, or anywhere in the application Helm chart's deployment
+  templates - fine at current scale, worth setting before the 6 application
+  pods and HPA-scaled replicas land on top of this.
+
+**Confidence**
+
+High - validated against the real CRD schema before writing, and all 4
+clusters are now confirmed healthy live with the node pool at 3 nodes.
+
+**Notes**
+
+The exact disk-attach ceiling wasn't visible via `kubectl describe node`
+(it's exposed through the `CSINode` object instead) - worth remembering for
+next time this class of scheduling failure comes up.
+
+---
+
 ### 2026-07-09 17:46
 
 **Agent**
@@ -45,6 +128,7 @@ until the application health endpoints are implemented and tested.
 **Notes**
 
 No probe configuration was changed during this review.
+
 
 ---
 
@@ -154,3 +238,110 @@ alignment was verified by character count.
 Changes were explicitly approved by the human developer before implementation,
 per ai-guidelines.md §5 and §19. Scope was kept to the two architecture
 documents plus this log, with follow-up items surfaced rather than actioned.
+
+---
+
+### 2026-07-08 17:00
+
+**Agent**
+
+Codex
+
+**Task**
+
+Add `event_timestamp` to the shared Kafka event schema after human approval.
+
+**Files Modified**
+
+- `tasks-valeria.md`
+- `eurotransit-contract.md`
+- `architecture-design.md`
+- `dod.md`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/service/OrderService.kt`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/OrderConsumer.kt`
+- `eurotransit-configuration-g02/docs/eurotransit-contract.md`
+- `eurotransit-configuration-g02/docs/architecture-design.md`
+- `eurotransit-configuration-g02/docs/dod.md`
+- `eurotransit-configuration-g02/docs/ai-logs/ai-logs-valeria.md`
+
+**Summary**
+
+Updated the Kafka event contract to require `event_timestamp`, documented its
+producer-created UTC semantics, and added the field to the Orders event DTOs and
+emitted events currently present in the codebase.
+
+**Potential Risks**
+
+- Other services and future event producers/consumers must include the same field
+  when their Kafka handlers are implemented.
+- Existing Kafka messages without `event_timestamp` would not match the updated
+  required event DTOs.
+
+**Confidence**
+
+Medium
+
+**Notes**
+
+This was a contract change requested explicitly by the human developer after
+discussion. Verified with Orders `clean test`; the Gradle wrapper jar was invoked
+directly because `gradlew.bat` does not handle the `CloudProg&Ops` path
+correctly.
+
+---
+
+### 2026-07-08 16:33
+
+**Agent**
+
+Codex
+
+**Task**
+
+Execute Valeria-owned tasks that can be completed locally without waiting for
+other team members or making unapproved architecture decisions.
+
+**Files Modified**
+
+- `tasks-valeria.md`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/service/OrderService.kt`
+- `eurotransit-application-g02/orders/src/main/kotlin/it/polito/eurotransit/orders/kafka/OrderConsumer.kt`
+- `eurotransit-application-g02/orders/src/main/resources/application.yaml`
+- `eurotransit-application-g02/.github/workflows/ci.yaml`
+- `eurotransit-configuration-g02/platform/argocd/eurotransit-application.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/values.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/templates/ingress.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/templates/orders-canary-traefikservice.yaml`
+- `eurotransit-configuration-g02/deploy/charts/eurotransit/templates/orders-canary-ingressroute.yaml`
+- `eurotransit-configuration-g02/docs/deployment-strategies.md`
+- `eurotransit-configuration-g02/docs/ai-logs/ai-logs-valeria.md`
+
+**Summary**
+
+Aligned Orders Kafka event DTO JSON names with the snake_case contract, updated
+Orders topic configuration to the six current topics, enabled Argo CD automated
+sync in the Application manifest, fixed CI image/tag handling for changed-service
+builds, added a disabled-by-default Orders canary TraefikService scaffold,
+documented deployment strategies, and created a Valeria-only task tracker.
+
+**Potential Risks**
+
+- The explicit event timestamp task is intentionally not implemented because it
+  changes the API Contract and needs human approval.
+- JWT and service-to-service authentication are blocked because Architecture
+  Design currently says authentication/JWT/OAuth are not required.
+- Canary configuration is scaffolded but disabled by default; it still requires a
+  canary service and live validation before promotion.
+- Blue/green implementation still needs a human decision on scope and routing
+  model.
+
+**Confidence**
+
+Medium
+
+**Notes**
+
+Verified with `helm template` both with canary disabled and with
+`canary.orders.enabled=true`. Verified Orders with a forced `clean test`; the
+Gradle batch wrapper fails in this workspace path because `CloudProg&Ops` is
+split by `cmd.exe`, so the Gradle wrapper jar was invoked directly.

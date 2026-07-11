@@ -210,6 +210,9 @@ the actual processing work, which can run on a different replica, retry
 independently, and be load-shed under backpressure.
 ```
 
+Every Kafka event payload includes `event_id` for deduplication and
+`event_timestamp` as the UTC instant when the producer created the event payload.
+
 ### Order state machine
 
 ```
@@ -305,7 +308,8 @@ eurotransit-application/
 ├── docs/
 │   ├── eurotransit-contract.md
 │   ├── capstone-dod.md
-│   ├── agent-log.md
+│   ├── ai-logs.md
+│   ├── ai-mistake-log.md
 │   └── chaos-reports/
 └── justfile
 ```
@@ -333,7 +337,9 @@ Config repo updated (by CI or manually)
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
 
-Important: Argo CD has cluster credentials. It NEVER builds images.
+Important: Argo CD has cluster credentials. It NEVER builds images. The
+EuroTransit Argo CD Application uses automated sync with `prune` and `selfHeal`
+enabled.
 ```
 
 ### Config repo structure
@@ -359,6 +365,8 @@ eurotransit-configuration/
 │       ├── frontend-service.yaml
 │       ├── ingress.yaml
 │       ├── middleware-redirect-https.yaml
+│       ├── orders-canary-ingressroute.yaml
+│       ├── orders-canary-traefikservice.yaml
 │       ├── servicemonitor-backend.yaml
 │       └── prometheusrule-backend.yaml
 ├── platform/
@@ -380,6 +388,7 @@ eurotransit-configuration/
 │   ├── strimzi/
 │   └── traefik/
 ├── docs/
+│   └── deployment-strategies.md
 └── README.md
 ```
 
