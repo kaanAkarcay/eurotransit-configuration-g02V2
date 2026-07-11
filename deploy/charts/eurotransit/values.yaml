@@ -39,7 +39,7 @@ payments:
   replicaCount: 1
   image:
     repository: kaantryoutregistry.azurecr.io/eurotransit/payments
-    tag: latest
+    tag: c96c7d1
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
