@@ -12,7 +12,7 @@ catalog:
   replicaCount: 1
   image:
     repository: kaantryoutregistry.azurecr.io/eurotransit/catalog
-    tag: 26f9839
+    tag: c96c7d1
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
