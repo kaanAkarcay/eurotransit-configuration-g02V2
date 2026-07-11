@@ -16,6 +16,12 @@
 #
 # Applied manually, after keycloak-cr.yaml's Keycloak instance is Ready:
 #   kubectl apply -f platform/keycloak/realm-import.yaml
+#
+# The `orders-service` client is a confidential service-account client. Its
+# secret is intentionally not committed here. After the realm import is applied,
+# set or retrieve the client secret in Keycloak and store the matching value as a
+# Kubernetes Secret/SealedSecret named `orders-service-client` with key
+# `client-secret`; the Orders Helm deployment references that secret.
 apiVersion: k8s.keycloak.org/v2beta1
 kind: KeycloakRealmImport
 metadata:
@@ -26,18 +32,75 @@ spec:
   realm:
     realm: eurotransit
     enabled: true
+    clientScopes:
+      - name: orders-audience
+        protocol: openid-connect
+        description: Adds the Orders API audience to frontend access tokens.
+        protocolMappers:
+          - name: orders-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: orders
+              access.token.claim: "true"
+              id.token.claim: "false"
+      - name: inventory-audience
+        protocol: openid-connect
+        description: Adds the Inventory API audience to Orders service-account tokens.
+        protocolMappers:
+          - name: inventory-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: inventory
+              access.token.claim: "true"
+              id.token.claim: "false"
     clients:
       - clientId: frontend
         publicClient: true
         protocol: openid-connect
         standardFlowEnabled: true
         directAccessGrantsEnabled: false
+        defaultClientScopes:
+          - web-origins
+          - acr
+          - profile
+          - roles
+          - email
+          - orders-audience
         redirectUris:
           - "https://g02.cpo2026.it/*"
         webOrigins:
           - "https://g02.cpo2026.it"
         attributes:
           pkce.code.challenge.method: S256
+      - clientId: orders
+        protocol: openid-connect
+        publicClient: false
+        standardFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+      - clientId: inventory
+        protocol: openid-connect
+        publicClient: false
+        standardFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+      - clientId: orders-service
+        protocol: openid-connect
+        publicClient: false
+        standardFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        defaultClientScopes:
+          - web-origins
+          - acr
+          - profile
+          - roles
+          - email
+          - inventory-audience
     users:
       - username: testuser
         enabled: true

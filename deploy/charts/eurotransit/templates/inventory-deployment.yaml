@@ -85,3 +85,9 @@ spec:
                 secretKeyRef:
                   name: "{{ .Release.Name }}-cluster-app"
                   key: password
+
+            - name: KEYCLOAK_ISSUER_URI
+              value: "{{ .Values.keycloak.issuerUri }}"
+
+            - name: INVENTORY_JWT_AUDIENCE
+              value: "{{ .Values.inventory.security.jwt.audience }}"

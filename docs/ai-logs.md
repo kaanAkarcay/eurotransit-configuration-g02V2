@@ -426,3 +426,53 @@ Verified with `helm template` both with canary disabled and with
 `canary.orders.enabled=true`. Verified Orders with a forced `clean test`; the
 Gradle batch wrapper fails in this workspace path because `CloudProg&Ops` is
 split by `cmd.exe`, so the Gradle wrapper jar was invoked directly.
+
+---
+
+### 2026-07-11 14:30
+
+**Agent**
+
+Codex
+
+**Task**
+
+Wire Keycloak realm and Helm environment for Orders and Inventory JWT support,
+excluding Payments per human instruction.
+
+**Files Modified**
+
+- platform/keycloak/realm-import.yaml
+- deploy/charts/eurotransit/values.yaml
+- deploy/charts/eurotransit/templates/orders-deployment.yaml
+- deploy/charts/eurotransit/templates/inventory-deployment.yaml
+- docs/ai-logs.md
+
+**Summary**
+
+Extended the existing `eurotransit` Keycloak realm import with Orders and
+Inventory API audiences, plus an `orders-service` service-account client that
+receives the Inventory audience. Added Helm values and deployment environment
+variables for issuer URI, expected audiences, token endpoint, client id, and the
+Secret reference used by Orders to read the service-account client secret.
+
+**Potential Risks**
+
+- The real `orders-service` client secret must be set in Keycloak and stored as
+  a Kubernetes Secret or SealedSecret named `orders-service-client` with key
+  `client-secret`; no plaintext secret is committed.
+- The configured issuer is `https://g02.cpo2026.it/auth/realms/eurotransit`,
+  matching the Keycloak CR hostname/path. Runtime DNS/TLS reachability must be
+  validated in cluster.
+- Payments is intentionally not wired in this pass, even though the full
+  documented service-to-service security model includes it.
+
+**Confidence**
+
+Medium — manifests are aligned with the existing Keycloak CR/realm import
+structure, but they require cluster validation and a real sealed client secret.
+
+**Notes**
+
+No Kubernetes service names, image repositories, API paths, or Kafka topics were
+changed.
