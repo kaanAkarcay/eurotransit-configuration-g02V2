@@ -1,0 +1,50 @@
+# Purpose: draft Chaos Mesh experiment for Experiment 4 - temporary network
+# partition between EuroTransit application pods and Strimzi Kafka brokers.
+# Hypothesis: POST /orders remains decoupled from Kafka publishing through the
+# Orders outbox target design; during the partition, events are delayed rather
+# than lost, and the pipeline drains after connectivity returns.
+# Expected behavior: Kafka client errors and pending/outbox backlog increase
+# during the fault; liveness does not restart services; after recovery, backlog
+# drains and orders reach terminal states without manual pod restarts.
+# Metrics: Orders outbox backlog, Kafka publish/consumer errors, pending order
+# age, Kafka broker health, consumer lag, pod restart counters.
+# Rollback: keep this Schedule suspended by default; if manually unsuspended,
+# set spec.suspend back to true or delete this Schedule and confirm no active
+# NetworkChaos remains.
+# Validation steps: verify Kafka and app labels first, run order load, unsuspend
+# for one controlled 60s run, observe backlog and recovery, then resuspend.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: kafka-network-partition
+  namespace: chaos-mesh
+  labels:
+    app.kubernetes.io/name: chaos-experiment
+    app.kubernetes.io/part-of: eurotransit
+    eurotransit.io/experiment: kafka-network-partition
+  annotations:
+    eurotransit.io/status: draft
+    eurotransit.io/auto-execute: "false"
+spec:
+  schedule: "@every 24h"
+  suspend: true
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: NetworkChaos
+  networkChaos:
+    action: partition
+    mode: all
+    selector:
+      namespaces:
+        - eurotransit
+      labelSelectors:
+        app.kubernetes.io/instance: eurotransit
+    direction: both
+    target:
+      mode: all
+      selector:
+        namespaces:
+          - kafka
+        labelSelectors:
+          strimzi.io/cluster: eurotransit-kafka
+    duration: 60s
