@@ -28,6 +28,17 @@ spec:
     type: persistent-claim
     size: 10Gi
     deleteClaim: false
+  # Sized from observed usage (~600Mi/broker under light load) with headroom
+  # for topic/partition growth; without this the brokers ran BestEffort QoS,
+  # first in line for eviction under the node memory pressure we hit in
+  # practice (see docs/ai-logs.md).
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: 750m
+      memory: 1Gi
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka

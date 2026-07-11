@@ -79,6 +79,7 @@ spec:
 
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "eurotransit-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+
             - name: KEYCLOAK_ISSUER_URI
               value: "{{ .Values.keycloak.issuerUri }}"
 

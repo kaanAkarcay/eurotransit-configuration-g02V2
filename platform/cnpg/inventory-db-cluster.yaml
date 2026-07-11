@@ -23,6 +23,18 @@ spec:
   imageName: ghcr.io/cloudnative-pg/postgresql:17
   storage:
     size: 10Gi
+  # Sized from observed usage (well under 100Mi/instance at this data volume)
+  # with headroom for real workloads; without this both pods ran BestEffort
+  # QoS, first in line for eviction under node memory pressure - a real risk
+  # for this cluster specifically since it's the Chaos Experiment 5 failover
+  # target and shouldn't be evicted for unrelated reasons.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   bootstrap:
     initdb:
       database: inventory_db

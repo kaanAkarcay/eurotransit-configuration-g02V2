@@ -26,6 +26,16 @@ spec:
   imageName: ghcr.io/cloudnative-pg/postgresql:17
   storage:
     size: 10Gi
+  # Sized from observed usage (well under 100Mi at this data volume) with
+  # headroom for real workloads; without this the pod ran BestEffort QoS,
+  # first in line for eviction under node memory pressure.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   bootstrap:
     initdb:
       database: orders_db

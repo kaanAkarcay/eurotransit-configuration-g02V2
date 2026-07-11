@@ -94,6 +94,7 @@ spec:
 
             - name: INVENTORY_HOST
               value: "{{ .Release.Name }}-inventory"
+
             - name: KEYCLOAK_ISSUER_URI
               value: "{{ .Values.keycloak.issuerUri }}"
 
