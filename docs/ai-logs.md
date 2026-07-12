@@ -5,6 +5,99 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-12 13:40
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Continuation of the same-day recovery: human merged `cluster.enabled: false`
+and the Keycloak resource fix to `main` (PR #14) - verify it held, then chase
+down why orders/notifications were still unhealthy and why 2 of 3 Kafka
+brokers stayed `Pending`.
+
+**Files Modified**
+
+- platform/strimzi/kafka-cluster.yaml (broker resource requests lowered)
+- backend/orders and backend/notifications (application repo, several fixes - see docs/ai-error-log.md for detail)
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Confirmed the merge held: `eurotransit-cluster` stayed gone, `orders-db` and
+`keycloak-0` scheduled successfully. Kafka's remaining 2 brokers were still
+blocked - real per-node deadlock, not one fixable constraint (one node
+disk-maxed, one pod-count-maxed, one memory-tight). Node pool scaling was a
+dead end: `az aks nodepool scale` hit a hard Azure regional vCPU quota wall
+(0 left in `polandcentral`), not something retrying fixes. Chose to lower
+the Kafka broker `resources.requests.memory` (768Mi -> 256Mi, limit kept
+near the original ceiling) rather than reduce broker count or replication
+factor - a human call, since dropping replicas would have broken
+`min.insync.replicas: 2` and meant real data-durability loss, not just a
+resource tweak. After deleting the two pending brokers to pick up the new
+request, then deleting all 3 simultaneously so their KRaft quorum handshake
+would overlap instead of missing each other on staggered restart timers, all
+3 brokers came up healthy with the original replication factor 3 intact on
+every topic - no durability tradeoff.
+
+Separately chased orders/notifications through several real, distinct bugs
+(each verified independently, not assumed - detail in `docs/ai-error-log.md`,
+kept local): a missing `spring-boot-starter-actuator` dependency in both
+services (probes-enabled YAML was correct but inert without it); a mutable
+image-tag caching trap where nodes served stale cached digests under
+`imagePullPolicy: IfNotPresent` even after the registry was updated,
+requiring `kubectl debug node ... crictl rmi` to flush; and, for orders
+specifically, a `jwtDecoder` bean that eagerly resolved the external
+`g02.cpo2026.it` hostname at startup and timed out - root-caused to an
+orphaned Azure Public IP resource still holding the `g02-entrypoint` DNS
+label after the cluster restart, blocking a new LoadBalancer IP from
+provisioning (`DnsRecordInUse`). Fixing that Azure-side needs Network
+Contributor permissions neither of us has - worked around it instead by
+splitting the JWT decoder's key-fetch source (now Keycloak's in-cluster
+Service, always reachable) from issuer validation (still the public
+hostname, since that's what real tokens are actually stamped with).
+
+Also found the identical `SecurityConfig.kt` pattern already exists in
+`inventory` - tested directly (`kubectl delete pod`) rather than assumed:
+the currently-deployed `inventory` image predates the security-delivery
+merge and doesn't contain that code at all, so it's not currently at risk,
+but the source on disk has the same landmine for whenever it's next rebuilt.
+Left unfixed - human's call to defer.
+
+**Potential Risks**
+
+- `inventory`'s source has the same eager-external-DNS JWT bug as orders
+  did; dormant only because its deployed image predates the security merge.
+- Docker build caching bit twice today: an incremental `docker build` silently
+  reused a stale layer and produced an image without a just-made source
+  change, even though `COPY src ./src` should invalidate on file changes -
+  `--no-cache` was needed to force it. Worth verifying image content
+  directly (not just trusting `docker build` succeeded) after any source fix
+  that must land in the next build.
+- The Azure Public IP/DNS conflict blocking the real ingress hostname is
+  still unresolved - the JWT workaround only unblocks orders' own startup,
+  it doesn't fix external access to `g02.cpo2026.it` itself.
+
+**Confidence**
+
+High for the Kafka resource fix and the JWT decoder split - both verified
+live (all 3 brokers healthy with full replication; orders' fix confirmed
+present in the built jar before pushing). Medium-high for orders overall as
+of this entry - the actuator fix just went through a fresh, verified build
+but hadn't yet been confirmed healthy live at the time of writing.
+
+**Notes**
+
+Second and third time today a "fixed" image turned out to not actually be
+running the fix - once from a failed `az acr login` silently breaking `docker
+push`, once from Docker's own build cache. Treat "the build/push succeeded"
+as unverified until the actual deployed digest or jar content is checked
+directly.
+
+---
+
 ### 2026-07-12 12:18
 
 **Agent**

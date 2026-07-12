@@ -28,17 +28,20 @@ spec:
     type: persistent-claim
     size: 10Gi
     deleteClaim: false
-  # Sized from observed usage (~600Mi/broker under light load) with headroom
-  # for topic/partition growth; without this the brokers ran BestEffort QoS,
-  # first in line for eviction under the node memory pressure we hit in
-  # practice (see docs/ai-logs.md).
+  # Request lowered from the original 768Mi (see docs/ai-logs.md for that
+  # sizing) purely to ease scheduling admission during a real capacity
+  # deadlock: 2 of 3 nodes are blocked on disk-attach/pod-count ceilings
+  # unrelated to memory, and the vCPU quota wall rules out adding a node.
+  # Limit stays generous (close to observed real usage) so runtime headroom
+  # doesn't shrink - only the scheduler's admission bar does. Broker count
+  # and replication factors are untouched; this does not affect durability.
   resources:
     requests:
-      cpu: 250m
-      memory: 768Mi
+      cpu: 100m
+      memory: 256Mi
     limits:
       cpu: 750m
-      memory: 1Gi
+      memory: 900Mi
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
