@@ -24,6 +24,18 @@ metadata:
   namespace: eurotransit
 spec:
   instances: 1
+  # Operator default (1700Mi request / 2Gi limit) is sized for a production
+  # instance; oversized for this single-realm, low-traffic lab deployment and
+  # was the single largest memory reservation in the whole cluster - explicit
+  # override to fit the 3-node pool during a real vCPU quota shortage
+  # (polandcentral regional quota exhausted, can't scale nodes to compensate).
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 750m
+      memory: 1Gi
   db:
     vendor: postgres
     host: keycloak-db-rw.eurotransit.svc.cluster.local

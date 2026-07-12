@@ -5,6 +5,185 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-12 12:18
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Cluster restarted after an overnight `az aks stop`/`start` for cost savings.
+Orders and notifications were still crash-looping despite yesterday's fixes -
+diagnose and get them, and the wider platform, healthy again.
+
+**Files Modified**
+
+- backend/orders/src/main/kotlin/it/polito/eurotransit/orders/config/JacksonConfig.kt (created, application repo)
+- backend/notifications/src/main/resources/application.yaml (application repo)
+- platform/keycloak/keycloak-cr.yaml
+- deploy/charts/eurotransit/values.yaml
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Yesterday's orders/notifications image push never actually happened - `az acr
+login` had silently failed before the build, so `docker push` ran with no
+valid credentials and errored, but the failure was easy to miss in the
+output. Confirmed via the registry API (tag timestamps unchanged since the
+original broken build) rather than assumed. Re-pushed, then found deleting
+the crash-looping pods just respawned the *same* wrong image - turned out
+each Deployment had a stale, long-orphaned ReplicaSet (image tag `v4`) stuck
+at `desired: 1` because its pod had never once passed readiness, so the
+Deployment controller could never safely scale it down. Deleted the stale
+ReplicaSets directly (not just their pods).
+
+That surfaced two further, real, distinct bugs once the correct image
+actually ran: orders was missing a `com.fasterxml.jackson.databind.ObjectMapper`
+bean (same auto-configuration gap as yesterday's `WebClient.Builder` issue -
+fixed the same way, an explicit `@Bean`); notifications was missing
+`management.endpoint.health.probes.enabled: true`, so `/actuator/health/liveness`
+404'd and kubelet kept killing it on startup-probe failure, not a code crash.
+Also hit real image-tag caching: reusing `manual-7008275` meant a node that
+already had it locally served the stale digest under `imagePullPolicy:
+IfNotPresent` even after the registry was updated - confirmed via `imageID`
+mismatch, worked around by deleting pods so they rescheduled onto nodes
+without a cached copy.
+
+Separately, the platform-wide capacity problem from two days ago resurfaced
+harder: a cold restart tries to schedule everything at once (Argo CD, 5 CNPG
+clusters, 3 Kafka brokers, Keycloak, observability stack) rather than the
+gradual rollout that worked before. `orders-db`, `keycloak-0`, and 2/3 Kafka
+brokers were stuck `Pending` on `Insufficient memory` / `Too many pods` /
+`exceed max volume count` simultaneously. Scaling the node pool (the fix last
+time) hit a hard wall: 0 regional vCPU quota left in `polandcentral` - not
+fixable by retrying, a real Azure subscription ceiling. Pivoted to trimming
+footprint instead: reduced Keycloak's memory request (1700Mi, an Operator
+default never set by us, was the single largest reservation in the cluster)
+to 512Mi via an explicit `resources` override, and found `eurotransit-cluster`
+- a bundled, leftover single-shared-Postgres CNPG cluster from before the
+per-service migration - still running with 3 full PVCs + 3 pods for a
+resource nothing references. Deleted it live for immediate relief; also set
+`cluster.enabled: false` in `values.yaml` since Argo CD's `selfHeal` recreated
+it within a minute of the live deletion (git still said `enabled: true`) -
+the live delete alone doesn't hold.
+
+**Potential Risks**
+
+- `values.yaml`'s `cluster.enabled: false` and the Keycloak resource
+  override are uncommitted - human is merging separately. Until that lands
+  on `main`, `eurotransit-cluster` will keep coming back on every Argo CD
+  reconcile and re-consume the capacity Kafka needs.
+- Kafka's remaining 2 broker pods (`pool-0`/`pool-2`) were still `Pending` as
+  of this entry - cluster is not fully healthy yet, pending the above merge.
+- `imagePullSecrets: acr-secret` (removed once already, flagged as broken)
+  reappeared in `values.yaml`, apparently reintroduced by the
+  `feature/security-delivery` merge - not yet re-removed, flagged to the
+  human, not fixed in this session.
+- The Azure vCPU quota shortage is a subscription-level constraint, not a
+  cluster config problem - re-attempting node pool scale will fail identically
+  until quota is increased or requested via Azure support.
+
+**Confidence**
+
+High for the diagnosed root causes (each confirmed via logs/registry
+API/CRD inspection, not assumed) and the two application fixes (both
+compile clean). Medium for the capacity situation overall - real relief was
+achieved, but it's only fully verified once the pending `values.yaml`/
+`keycloak-cr.yaml` changes are merged and Kafka's last 2 brokers are
+confirmed healthy.
+
+**Notes**
+
+Second time an `az acr login` failure has silently caused a bad push (same
+class of transient network blip seen with the AKS API server DNS earlier)
+- worth treating "push completed" claims as unverified until checked against
+the registry directly, not just the CLI's apparent success.
+
+---
+
+### 2026-07-11 16:54
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Debug why the 5 backend Deployments (catalog, orders, inventory, payments,
+notifications) were failing after the human manually built and pushed images
+to `lab02clusterregistry`, on `dev` (merged to `main` via PR #12).
+
+**Files Modified**
+
+- deploy/charts/eurotransit/templates/{catalog,orders,inventory,payments,notifications}-deployment.yaml
+- deploy/charts/eurotransit/values.yaml
+- platform/cnpg/{catalog,orders,inventory,payments,keycloak}-db-cluster.yaml
+- platform/strimzi/kafka-cluster.yaml
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Two independent, real bugs, not one. First: the Deployment templates' DB env
+vars were leftover from an older single-shared-Postgres design - catalog/
+inventory/payments set `DB_HOST`/etc, which their Spring apps never read
+(they expect `SPRING_R2DBC_URL`/`USERNAME`/`PASSWORD`); orders' names matched
+but pointed at the old shared cluster instead of `orders-db`. All 5 were also
+missing Kafka bootstrap and, for orders, `PAYMENTS_HOST`/`INVENTORY_HOST` -
+confirmed by reading each service's actual `application.yaml`, not assumed.
+Also removed a stale `imagePullSecrets: acr-secret` that referenced a Secret
+that was never created (redundant anyway now that ACR is attached via
+kubelet managed identity).
+
+Second, found while fixing the first: `catalog-db`/`orders-db`/`inventory-db`/
+`payments-db` were still in `cnpg-system`, but their Deployments run in
+`eurotransit` - a Pod's `secretKeyRef` can only resolve a Secret in its own
+namespace, so no amount of env-var renaming would have worked. Moved all 4 to
+`eurotransit`, same reasoning already documented on `keycloak-db`. Required
+deleting and recreating the live `Cluster` CRs (confirmed safe - no real data
+yet, schema-only).
+
+Fix verified end-to-end after merging to `main`: catalog, inventory, and
+payments are healthy (`1/1`, zero restarts, correct image, correct DB/Kafka
+wiring) via the real GitOps flow, not just a manual `kubectl apply`. Orders
+and notifications still crash-loop, but on two unrelated, pre-existing
+application-code bugs (missing `jackson-databind` on the classpath; missing
+`WebClient.Builder` bean for `InventoryClient`) - out of scope for this repo,
+flagged to the human for the application repo.
+
+Also added `resources.requests/limits` to all 5 CNPG clusters and the
+Strimzi `KafkaNodePool` (previously flagged as a gap, deferred until
+something actually failed). It did: `keycloak-db` was killed mid-session by
+a failed liveness probe while running `BestEffort` QoS under real node
+memory pressure (one node hit 101%). Sized from observed usage
+(`kubectl top pods`) with headroom. Confirmed after rollout: all 3 nodes
+back to 86-87% memory, `MemoryPressure: False`, CNPG/Kafka pods now
+`Burstable` QoS, no evictions since.
+
+**Potential Risks**
+
+- Registry push is still manual (`docker build`/`push` by hand) - the
+  application repo's CI pipeline is not yet reliably producing pushed images
+  under its own tags; `main` briefly had a commit pointing at a tag
+  (`06dc58e`) that was never actually pushed to the registry.
+- `payment-gateway-sim` still has no Deployment/Service in the Helm chart at
+  all - deliberately not added without a decision on how it should be wired.
+
+**Confidence**
+
+High for the infra fixes - each one verified live against the real cluster
+(pod logs, `kubectl top`, QoS class, registry manifest checks), not assumed.
+The two remaining crash-looping services are confirmed to be application-code
+bugs, not infra, but the exact fix for either wasn't pinned down yet.
+
+**Notes**
+
+Argo CD's `eurotransit` Application tracks `main`, not `dev` - manual
+`kubectl apply` testing against a `selfHeal: true` Application gets reverted
+on the next reconcile unless the fix actually lands on `main`.
+
+---
+
 ### 2026-07-10 18:20
 
 **Agent**

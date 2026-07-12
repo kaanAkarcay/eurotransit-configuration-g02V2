@@ -81,7 +81,13 @@ keycloak:
   issuerUri: https://g02.cpo2026.it/auth/realms/eurotransit
   tokenUri: http://eurotransit-keycloak-service:8080/auth/realms/eurotransit/protocol/openid-connect/token
 cluster:
-  enabled: true
+  # Disabled: leftover bundled single-shared-Postgres subchart from before the
+  # per-service CNPG migration. Nothing references it anymore - all 5 backend
+  # services use their own dedicated <service>-db CNPG cluster instead. Left
+  # running it was silently holding 3 full PVCs + 3 pods for nothing, and
+  # actively fighting our attempt to free capacity for orders-db/Kafka during
+  # a real Azure vCPU quota shortage (polandcentral regional quota exhausted).
+  enabled: false
   type: postgresql
   mode: standalone
   version:
