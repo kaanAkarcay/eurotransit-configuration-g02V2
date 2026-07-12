@@ -70,7 +70,7 @@ notifications:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
-    tag: manual-7008275
+    tag: 9cb201a
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
