@@ -12,7 +12,7 @@ catalog:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
-    tag: manual-7008275
+    tag: 9cb201a
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
