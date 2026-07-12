@@ -19,6 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: notifications
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "{{ .Values.notifications.restartedAt }}"
 
     spec:
       {{- with .Values.imagePullSecrets }}

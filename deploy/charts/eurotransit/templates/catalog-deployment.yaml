@@ -19,6 +19,11 @@ spec:
       labels:
         app.kubernetes.io/name: catalog
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        # Forces a real rollout when CI pushes a new "latest" image - the
+        # tag string itself never changes, so without this Kubernetes has
+        # no signal to restart already-running pods.
+        kubectl.kubernetes.io/restartedAt: "{{ .Values.catalog.restartedAt }}"
 
     spec:
       {{- with .Values.imagePullSecrets }}

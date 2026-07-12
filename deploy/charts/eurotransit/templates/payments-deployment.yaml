@@ -19,6 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: payments
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "{{ .Values.payments.restartedAt }}"
 
     spec:
       {{- with .Values.imagePullSecrets }}

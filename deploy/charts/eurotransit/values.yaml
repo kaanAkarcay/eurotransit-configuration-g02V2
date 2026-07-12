@@ -12,8 +12,15 @@ catalog:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
-    tag: manual-7008275
-    pullPolicy: IfNotPresent
+    tag: latest
+    # Always, not IfNotPresent: tag is mutable now (CI always pushes "latest"),
+    # so a cached local image under that name must never be trusted as current.
+    pullPolicy: Always
+  # Bumped by CI on every push to main (see .github/workflows/ci.yaml) so the
+  # pod template hash changes and Kubernetes actually rolls out the new
+  # image - "latest" alone never changes the Deployment spec, so nothing
+  # would otherwise trigger a restart.
+  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
     type: ClusterIP
     port: 8080
@@ -21,8 +28,9 @@ orders:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
-    tag: manual-7008275
-    pullPolicy: IfNotPresent
+    tag: latest
+    pullPolicy: Always
+  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
     type: ClusterIP
     port: 8080
@@ -49,8 +57,9 @@ inventory:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
-    tag: manual-7008275
-    pullPolicy: IfNotPresent
+    tag: latest
+    pullPolicy: Always
+  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
     type: ClusterIP
     port: 8080
@@ -61,8 +70,9 @@ payments:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payments
-    tag: manual-7008275
-    pullPolicy: IfNotPresent
+    tag: latest
+    pullPolicy: Always
+  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
     type: ClusterIP
     port: 8080
@@ -70,8 +80,9 @@ notifications:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
-    tag: manual-7008275
-    pullPolicy: IfNotPresent
+    tag: latest
+    pullPolicy: Always
+  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
     type: ClusterIP
     port: 8080

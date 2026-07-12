@@ -19,6 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: orders
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "{{ .Values.orders.restartedAt }}"
 
     spec:
       {{- with .Values.imagePullSecrets }}
