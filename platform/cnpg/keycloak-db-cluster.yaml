@@ -1,0 +1,40 @@
+# Postgres cluster for Keycloak.
+# Single instance - not a chaos-experiment target.
+#
+# Lives in "eurotransit", NOT "cnpg-system" like the other 4 clusters -
+# deliberate exception. The Keycloak CRD's db.usernameSecret/passwordSecret
+# fields have no namespace option; they only resolve in the same namespace as
+# the Keycloak CR itself. Putting this cluster in cnpg-system (matching the
+# other 4) would generate its credentials Secret somewhere Keycloak can't
+# read it. CNPG's own operator is cluster-scoped and already manages Cluster
+# resources across namespaces, so this doesn't cause the equivalent problem
+# in reverse.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/keycloak-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: eurotransit
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  # Sized from observed usage (well under 100Mi at this data volume) with
+  # headroom for real workloads. Without this the pod ran BestEffort QoS,
+  # which is what let it get killed by a failed liveness probe under real
+  # node memory pressure (see docs/ai-logs.md) - a Burstable-QoS pod with a
+  # real request is far less likely to be picked for eviction first.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  bootstrap:
+    initdb:
+      database: keycloak_db
+      owner: keycloak

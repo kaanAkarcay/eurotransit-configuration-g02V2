@@ -19,8 +19,17 @@ spec:
       labels:
         app.kubernetes.io/name: catalog
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        # Forces a real rollout when CI pushes a new "latest" image - the
+        # tag string itself never changes, so without this Kubernetes has
+        # no signal to restart already-running pods.
+        kubectl.kubernetes.io/restartedAt: "{{ .Values.catalog.restartedAt }}"
 
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: catalog
 
@@ -58,27 +67,17 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "postgres"
 
-            - name: DB_HOST
-              value: "{{ .Release.Name }}-cluster-rw"
+            - name: SPRING_R2DBC_URL
+              value: "r2dbc:postgresql://catalog-db-rw.eurotransit.svc.cluster.local:5432/catalog_db"
 
-            - name: DB_PORT
-              value: "5432"
-
-            - name: DB_NAME
+            - name: SPRING_R2DBC_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
-                  key: dbname
-
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: catalog-db-app
                   key: username
 
-            - name: DB_PASS
+            - name: SPRING_R2DBC_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: catalog-db-app
                   key: password
-

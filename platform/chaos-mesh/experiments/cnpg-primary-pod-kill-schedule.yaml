@@ -1,0 +1,44 @@
+# Purpose: draft Chaos Mesh experiment for Experiment 5 - CloudNativePG primary
+# pod kill on the Inventory database cluster.
+# Hypothesis: deleting the inventory-db primary causes CloudNativePG to promote
+# a standby, services see transient database errors, and clients reconnect after
+# failover without manual pod restarts or committed data loss.
+# Expected behavior: CNPG reports a new primary, Inventory/Orders may show
+# transient DB errors/readiness changes, checkout recovers, and liveness does
+# not amplify failover into restart loops.
+# Metrics: CNPG Cluster status, primary switch time, database connection errors,
+# service readiness transitions, checkout success rate, stuck PENDING orders,
+# pod restart counters.
+# Rollback: keep this Schedule suspended by default; if manually unsuspended,
+# set spec.suspend back to true and verify inventory-db has one primary and one
+# healthy standby after reconciliation.
+# Validation steps: verify the live primary label before unsuspending with
+# kubectl get pods -n cnpg-system -l cnpg.io/cluster=inventory-db --show-labels,
+# run checkout load, unsuspend for one controlled run, then resuspend.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: cnpg-inventory-primary-pod-kill
+  namespace: chaos-mesh
+  labels:
+    app.kubernetes.io/name: chaos-experiment
+    app.kubernetes.io/part-of: eurotransit
+    eurotransit.io/experiment: cnpg-primary-pod-kill
+  annotations:
+    eurotransit.io/status: draft
+    eurotransit.io/auto-execute: "false"
+spec:
+  schedule: "@every 24h"
+  suspend: true
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: PodChaos
+  podChaos:
+    action: pod-kill
+    mode: one
+    selector:
+      namespaces:
+        - cnpg-system
+      labelSelectors:
+        cnpg.io/cluster: inventory-db
+        role: primary

@@ -19,8 +19,14 @@ spec:
       labels:
         app.kubernetes.io/name: orders
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "{{ .Values.orders.restartedAt }}"
 
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: orders
 
@@ -59,7 +65,7 @@ spec:
               value: "postgres"
 
             - name: DB_HOST
-              value: "{{ .Release.Name }}-cluster-rw"
+              value: "orders-db-rw.eurotransit.svc.cluster.local"
 
             - name: DB_PORT
               value: "5432"
@@ -67,18 +73,52 @@ spec:
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: orders-db-app
                   key: dbname
 
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: orders-db-app
                   key: username
 
             - name: DB_PASS
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: orders-db-app
                   key: password
 
+            - name: KAFKA_BROKERS
+              value: "eurotransit-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+
+            - name: PAYMENTS_HOST
+              value: "{{ .Release.Name }}-payments"
+
+            - name: INVENTORY_HOST
+              value: "{{ .Release.Name }}-inventory"
+
+            - name: KEYCLOAK_ISSUER_URI
+              value: "{{ .Values.keycloak.issuerUri }}"
+
+            - name: KEYCLOAK_JWK_SET_URI
+              value: "{{ .Values.keycloak.jwkSetUri }}"
+
+            - name: ORDERS_JWT_AUDIENCE
+              value: "{{ .Values.orders.security.jwt.audience }}"
+
+            - name: INVENTORY_SERVICE_TOKEN_ENABLED
+              value: "{{ .Values.orders.security.serviceToken.inventory.enabled }}"
+
+            {{- if .Values.orders.security.serviceToken.inventory.enabled }}
+            - name: KEYCLOAK_TOKEN_URI
+              value: "{{ .Values.keycloak.tokenUri }}"
+
+            - name: ORDERS_SERVICE_CLIENT_ID
+              value: "{{ .Values.orders.security.serviceToken.inventory.clientId }}"
+
+            - name: ORDERS_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.orders.security.serviceToken.inventory.clientSecret.secretName }}"
+                  key: "{{ .Values.orders.security.serviceToken.inventory.clientSecret.secretKey }}"
+            {{- end }}

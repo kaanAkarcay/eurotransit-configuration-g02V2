@@ -1,0 +1,37 @@
+# Postgres cluster for Payments.
+# Single instance - not the Chaos Experiment 5 target (that's inventory-db).
+#
+# Credentials: CNPG auto-generates a Secret named "payments-db-app" -
+# Payments' Deployment references it via secretKeyRef.
+#
+# Lives in "eurotransit", NOT "cnpg-system" - same reasoning as keycloak-db:
+# a Pod's secretKeyRef can only resolve a Secret in its own namespace, and
+# Payments' Deployment runs in "eurotransit", so the generated app secret has
+# to live there too.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/payments-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: payments-db
+  namespace: eurotransit
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  # Sized from observed usage (well under 100Mi at this data volume) with
+  # headroom for real workloads; without this the pod ran BestEffort QoS,
+  # first in line for eviction under node memory pressure.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  bootstrap:
+    initdb:
+      database: payments_db
+      owner: payments

@@ -1,0 +1,39 @@
+# Postgres cluster for Catalog.
+# Single instance - no failover target, not part of any chaos experiment.
+#
+# Credentials: CNPG auto-generates a Secret named "catalog-db-app" containing
+# the app user's username/password - nothing credential-related is committed
+# here. Catalog's Deployment references that Secret's keys via secretKeyRef,
+# not a hardcoded default.
+#
+# Lives in "eurotransit", NOT "cnpg-system" - same reasoning as keycloak-db:
+# a Pod's secretKeyRef can only resolve a Secret in its own namespace, and
+# Catalog's Deployment runs in "eurotransit", so the generated app secret has
+# to live there too.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/catalog-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: catalog-db
+  namespace: eurotransit
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  # Sized from observed usage (well under 100Mi at this data volume) with
+  # headroom for real workloads; without this the pod ran BestEffort QoS,
+  # first in line for eviction under node memory pressure.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  bootstrap:
+    initdb:
+      database: catalog_db
+      owner: catalog

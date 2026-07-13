@@ -185,7 +185,7 @@ Internally, Payments calls the external payment gateway — its **own**, separat
 
 ## 2. Asynchronous order pipeline (Kafka)
 
-Orders is the sole producer and the sole consumer of every topic below except `order-confirmed` and `order-failed` (also consumed by Notifications) and `order-failed` (also consumed by Inventory, for compensation). Each topic marks the boundary between one of Orders' four internal stages — entered by consuming an event, exited by publishing the next one. Every Kafka message includes an `event_id` for consumer-side deduplication.
+Orders is the sole producer and the sole consumer of every topic below except `order-confirmed` (also consumed by Notifications) and `order-failed` (also consumed by Notifications and Inventory, for compensation). Each topic marks the boundary between one of Orders' four internal stages — entered by consuming an event, exited by publishing the next one. Every Kafka message includes an `event_id` for consumer-side deduplication and an `event_timestamp` with the UTC instant when the producer created the event payload.
 
 ### Order state machine
 
@@ -204,6 +204,7 @@ PENDING → RESERVED → CONFIRMED
 ```json
 {
   "event_id": "evt-111",
+  "event_timestamp": "2026-07-15T10:00:00Z",
   "order_id": "ord-98765",
   "train_id": "TR-101",
   "seat_class": "business",
@@ -222,6 +223,7 @@ Stage 1 behavior: calls Inventory synchronously (`POST /reserve`, see §1.4). On
 ```json
 {
   "event_id": "evt-222",
+  "event_timestamp": "2026-07-15T10:00:00.100Z",
   "order_id": "ord-98765",
   "reservation_id": "res-777",
   "user_id": "user-42",
@@ -241,6 +243,7 @@ Stage 2 behavior: order status set to RESERVED; calls Payments synchronously (`P
 ```json
 {
   "event_id": "evt-444a",
+  "event_timestamp": "2026-07-15T10:00:00.350Z",
   "order_id": "ord-98765",
   "transaction_id": "txn-555",
   "amount": 45.50,
@@ -259,6 +262,7 @@ Stage 3 behavior: order status set to CONFIRMED, publishes `order-confirmed`. No
 ```json
 {
   "event_id": "evt-444b",
+  "event_timestamp": "2026-07-15T10:00:00.350Z",
   "order_id": "ord-98765",
   "reservation_id": "res-777",
   "reason": "insufficient_funds"
@@ -278,6 +282,7 @@ Stage 4 behavior: order status set to FAILED, publishes `order-failed` — this 
 ```json
 {
   "event_id": "evt-555",
+  "event_timestamp": "2026-07-15T10:00:00.450Z",
   "order_id": "ord-98765",
   "user_email": "user@example.com",
   "train_id": "TR-101",
@@ -299,14 +304,15 @@ On receive: Notifications sends a confirmation email. **Graceful degradation**: 
 ```json
 {
   "event_id": "evt-666",
+  "event_timestamp": "2026-07-15T10:00:00.450Z",
   "order_id": "ord-98765",
   "reservation_id": "res-777",
-  "reason": "payment_declined",
+  "reason": "insufficient_funds",
   "user_email": "user@example.com"
 }
 ```
 
-Note: `reservation_id` is only present when the failure happened after a reservation existed (i.e. published by Stage 4, not by Stage 1's direct no-seats path) — that's what tells Inventory whether there's anything to compensate.
+Note: `reservation_id` is only present when the failure happened after a reservation existed (i.e. published by Stage 4, not by Stage 1's direct no-seats path) — that's what tells Inventory whether there's anything to compensate. For payment failures, `reason` is propagated from `payment-failed`; if Stage 4 receives an older or malformed event without a reason, it uses `PAYMENT_REJECTED`.
 
 On receive by Inventory: if `reservation_id` is present, releases the reservation (compensation) by calling its own `UPDATE seats SET available = available + :quantity ...`; otherwise ignores (nothing was reserved). On receive by Notifications: sends a failure email to the user.
 

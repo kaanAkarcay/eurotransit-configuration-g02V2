@@ -1,0 +1,42 @@
+# Postgres cluster for Orders.
+# Single instance - not the Chaos Experiment 5 target (that's inventory-db).
+#
+# database name matches what orders/src/main/resources/application.yaml
+# already expects as its R2DBC default (${DB_NAME:orders_db}) - not a new
+# name invented here, kept consistent with the existing app code.
+#
+# Credentials: CNPG auto-generates a Secret named "orders-db-app" - Orders'
+# Deployment references it via secretKeyRef instead of the localhost/postgres/
+# postgres fallback defaults in application.yaml.
+#
+# Lives in "eurotransit", NOT "cnpg-system" - same reasoning as keycloak-db:
+# a Pod's secretKeyRef can only resolve a Secret in its own namespace, and
+# Orders' Deployment runs in "eurotransit", so the generated app secret has
+# to live there too.
+#
+# Applied manually, after the CNPG operator is installed:
+#   kubectl apply -f platform/cnpg/orders-db-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: orders-db
+  namespace: eurotransit
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 10Gi
+  # Sized from observed usage (well under 100Mi at this data volume) with
+  # headroom for real workloads; without this the pod ran BestEffort QoS,
+  # first in line for eviction under node memory pressure.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  bootstrap:
+    initdb:
+      database: orders_db
+      owner: orders

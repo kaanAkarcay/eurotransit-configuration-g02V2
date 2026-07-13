@@ -19,8 +19,14 @@ spec:
       labels:
         app.kubernetes.io/name: payments
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "{{ .Values.payments.restartedAt }}"
 
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: payments
 
@@ -58,27 +64,26 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "postgres"
 
-            - name: DB_HOST
-              value: "{{ .Release.Name }}-cluster-rw"
+            - name: SPRING_R2DBC_URL
+              value: "r2dbc:postgresql://payments-db-rw.eurotransit.svc.cluster.local:5432/payments_db"
 
-            - name: DB_PORT
-              value: "5432"
-
-            - name: DB_NAME
+            - name: SPRING_R2DBC_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
-                  key: dbname
-
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: payments-db-app
                   key: username
 
-            - name: DB_PASS
+            - name: SPRING_R2DBC_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-cluster-app"
+                  name: payments-db-app
                   key: password
 
+            - name: KEYCLOAK_ISSUER_URI
+              value: "{{ .Values.keycloak.issuerUri }}"
+
+            - name: KEYCLOAK_JWK_SET_URI
+              value: "{{ .Values.keycloak.jwkSetUri }}"
+
+            - name: PAYMENTS_JWT_AUDIENCE
+              value: "{{ .Values.payments.security.jwt.audience }}"
