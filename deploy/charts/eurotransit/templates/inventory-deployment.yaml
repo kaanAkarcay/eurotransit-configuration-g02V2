@@ -85,5 +85,8 @@ spec:
             - name: KEYCLOAK_ISSUER_URI
               value: "{{ .Values.keycloak.issuerUri }}"
 
+            - name: KEYCLOAK_JWK_SET_URI
+              value: "{{ .Values.keycloak.jwkSetUri }}"
+
             - name: INVENTORY_JWT_AUDIENCE
               value: "{{ .Values.inventory.security.jwt.audience }}"

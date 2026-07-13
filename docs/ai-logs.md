@@ -5,6 +5,133 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-11 17:55
+
+**Agent**
+
+Claude (Opus 4.8) via Claude Code
+
+**Task**
+
+Sync the design docs with the application change that made `payment-gateway-sim`
+a real Stripe adapter (application PR #18), per ai-guidelines §8/§19.
+
+**Files Modified**
+
+- docs/architecture-design.md
+- docs/eurotransit-contract.md
+
+**Summary**
+
+Added a note after the service table in architecture-design.md and extended the
+"Payment Gateway" lane note in eurotransit-contract.md to record that the
+external payment gateway is realised by an in-cluster adapter, `payment-gateway-sim`,
+which now calls Stripe's PaymentIntents API for real and keeps a header-driven
+fault-injection short-circuit for chaos/test harnesses. Payments' request/response
+contract with the gateway is explicitly unchanged.
+
+**Potential Risks**
+
+- Documentation-only; no diagrams or the fixed-width service table were reflowed
+  (notes added alongside to avoid formatting churn).
+- Not covered here: a first-class service-table row for `payment-gateway-sim`, a
+  documented `POST /gateway/charge` API section, and the service's Helm
+  deployment + Stripe SealedSecret — proposed as follow-ups.
+
+**Confidence**
+
+High — wording mirrors the implemented behavior in application PR #18.
+
+**Notes**
+
+Introducing a Stripe-backed adapter is an architecture-doc change (§19); it was
+proposed and approved before editing.
+### 2026-07-12 19:51
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+A CI run auto-committed image tags (`7a24ccb`) for all 5 backend services
+that didn't actually exist in the registry, taking every backend pod down at
+once. Root-cause it and fix the whole CI/CD pipeline, not just patch the
+symptom.
+
+**Files Modified**
+
+- .github/workflows/ci.yaml (application repo)
+- deploy/charts/eurotransit/values.yaml
+- deploy/charts/eurotransit/templates/{catalog,orders,inventory,payments,notifications}-deployment.yaml
+- backend/inventory, backend/payments (application repo - JWT decoder fix, same as orders' earlier one)
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Root cause of the outage: `ci.yaml` built and pushed to
+`eurotransit-<service>` (hyphen) while every Deployment pulls from
+`eurotransit/<service>` (slash) - a typo that meant CI's images never landed
+anywhere Kubernetes could find them, yet the workflow still committed the
+tag bump unconditionally. Argo CD's `selfHeal` then deployed the broken
+reference to all 5 services within minutes, with zero verification gate in
+between - confirmed Argo CD itself isn't the problem, it's purely
+declarative and was doing exactly what git told it to.
+
+Rebuilt the tagging strategy end-to-end rather than just fixing the typo,
+per explicit human direction: switched to a fixed `latest` tag (paired with
+`imagePullPolicy: Always` on all 5 services - a mutable tag under
+`IfNotPresent` is exactly what caused today's earlier node-caching pain) and
+added a `restartedAt` annotation the CI now bumps on every push, since the
+tag string no longer changes and Kubernetes doesn't restart running pods
+just because a remote image moved. Chose a git-driven mechanism (CI commits
+the bump to the config repo, same GitOps token it already had) over giving
+CI direct cluster credentials - human's call, keeps the trust boundary
+where it already was.
+
+Verified the fixed pipeline for real: pushed a genuine source change
+(inventory/payments JWT decoder fix, same root cause and same fix pattern
+as orders' `g02.cpo2026.it` DNS-timeout bug from earlier - both services'
+`SecurityConfig.kt` were byte-for-byte identical to orders' pre-fix version)
+to `dev` and watched CI run end-to-end: build, test, push, verify, commit,
+Argo CD sync. Caught a real gap in the verification step doing this - see
+`docs/ai-error-log.md` (local, this session) for the full write-up. Separately,
+one of the 3 nodes went `NotReady` mid-rollout (kubelet stopped posting
+status) - unrelated to any of this, Kubernetes' own node-eviction handled it
+without intervention.
+
+**Potential Risks**
+
+- The verification-gate bug (CI's own check passed while deploying stale
+  content) is fixed in `ci.yaml` locally but not yet committed/pushed as of
+  this entry - `inventory` and `payments` are still down live pending either
+  a fresh CI run or a manual rebuild.
+- `payments` had zero Keycloak-related env vars wired into its Deployment
+  before this session (`KEYCLOAK_ISSUER_URI`, audience, etc. were all
+  silently falling back to hardcoded defaults in `application.yaml`) - now
+  fixed, but worth knowing this JWT feature (`feat/payments-jwt`) shipped
+  without ever being wired to Helm values at all until now.
+- `imagePullSecrets: acr-secret` (flagged twice already as broken/unused)
+  is still in `values.yaml` - not fixed this session either.
+
+**Confidence**
+
+High for the root cause and the naming/pull-policy fixes - both directly
+confirmed against the registry API. Medium for the CI pipeline overall -
+the rollout-trigger mechanism is proven working end-to-end, but the
+push-verification gate had one real gap already found live, and hasn't yet
+been re-verified after being patched.
+
+**Notes**
+
+Second time today a CI/CD "success" signal (a passing verification step,
+not just an unchecked one) turned out to be trusting the wrong thing rather
+than actually being wrong - worth treating even an added safety check as
+unproven until it's watched catch a real failure, not just assumed correct
+because it was added deliberately.
+
+---
+
 ### 2026-07-12 13:40
 
 **Agent**

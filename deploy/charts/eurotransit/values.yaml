@@ -4,7 +4,13 @@ frontend:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
     tag: latest
-    pullPolicy: IfNotPresent
+    # Always, not IfNotPresent: tag is mutable ("latest"), matching the same
+    # reasoning already applied to the 5 backend services.
+    pullPolicy: Always
+  # Bumped by CI on every push to frontend/** (see .github/workflows/ci.yaml
+  # in the application repo) so the pod template hash changes and
+  # Kubernetes actually rolls out the new image.
+  restartedAt: "unset"
   service:
     type: ClusterIP
     port: 80
@@ -76,6 +82,9 @@ payments:
   service:
     type: ClusterIP
     port: 8080
+  security:
+    jwt:
+      audience: payments
 notifications:
   replicaCount: 1
   image:

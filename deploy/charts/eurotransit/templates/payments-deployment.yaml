@@ -78,3 +78,12 @@ spec:
                 secretKeyRef:
                   name: payments-db-app
                   key: password
+
+            - name: KEYCLOAK_ISSUER_URI
+              value: "{{ .Values.keycloak.issuerUri }}"
+
+            - name: KEYCLOAK_JWK_SET_URI
+              value: "{{ .Values.keycloak.jwkSetUri }}"
+
+            - name: PAYMENTS_JWT_AUDIENCE
+              value: "{{ .Values.payments.security.jwt.audience }}"
