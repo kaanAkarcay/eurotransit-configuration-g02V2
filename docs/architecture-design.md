@@ -103,6 +103,15 @@ Each service is an independent Spring Boot (Kotlin) application with its own:
 └────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
+> **Payment gateway.** The "external payment gateway" Payments calls is realised
+> in this deployment by an in-cluster adapter service, `payment-gateway-sim`. It
+> is a real Stripe-backed adapter — it calls Stripe's PaymentIntents API
+> server-to-server (confirm-in-one, no redirect/webhook) — and additionally
+> exposes a header-driven fault-injection short-circuit (`X-Simulate-Delay-Ms` /
+> `X-Simulate-Failure`) used only by chaos experiments and test harnesses.
+> Payments never sends those headers in normal operation, and its
+> request/response contract with the gateway is unchanged.
+
 ### Service communication
 
 ```

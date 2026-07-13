@@ -5,6 +5,47 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-11 17:55
+
+**Agent**
+
+Claude (Opus 4.8) via Claude Code
+
+**Task**
+
+Sync the design docs with the application change that made `payment-gateway-sim`
+a real Stripe adapter (application PR #18), per ai-guidelines §8/§19.
+
+**Files Modified**
+
+- docs/architecture-design.md
+- docs/eurotransit-contract.md
+
+**Summary**
+
+Added a note after the service table in architecture-design.md and extended the
+"Payment Gateway" lane note in eurotransit-contract.md to record that the
+external payment gateway is realised by an in-cluster adapter, `payment-gateway-sim`,
+which now calls Stripe's PaymentIntents API for real and keeps a header-driven
+fault-injection short-circuit for chaos/test harnesses. Payments' request/response
+contract with the gateway is explicitly unchanged.
+
+**Potential Risks**
+
+- Documentation-only; no diagrams or the fixed-width service table were reflowed
+  (notes added alongside to avoid formatting churn).
+- Not covered here: a first-class service-table row for `payment-gateway-sim`, a
+  documented `POST /gateway/charge` API section, and the service's Helm
+  deployment + Stripe SealedSecret — proposed as follow-ups.
+
+**Confidence**
+
+High — wording mirrors the implemented behavior in application PR #18.
+
+**Notes**
+
+Introducing a Stripe-backed adapter is an architecture-doc change (§19); it was
+proposed and approved before editing.
 ### 2026-07-12 19:51
 
 **Agent**
