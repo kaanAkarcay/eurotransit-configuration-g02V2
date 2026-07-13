@@ -6,7 +6,9 @@ providers:
 service:
   type: LoadBalancer
   annotations:
-    service.beta.kubernetes.io/azure-dns-label-name: g02-entrypoint
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: MC_G_06_Lab02cluster_polandcentral
+    service.beta.kubernetes.io/azure-pip-name: kubernetes-a18745822eff349198a98b394c413147
+    service.beta.kubernetes.io/azure-dns-label-name: g02-entrypoint-2026
 
 log:
   level: DEBUG

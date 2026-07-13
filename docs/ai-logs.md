@@ -5,6 +5,260 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-13 16:45
+
+**Agent**
+
+Codex
+
+**Task**
+
+Move the ingress incident from open-ended audit to controlled recovery, without
+changing live infrastructure before approval.
+
+**Files Modified**
+
+- platform/traefik/values.yaml
+- platform/keycloak/keycloak-cr.yaml
+- platform/keycloak/keycloak-ingress.yaml
+- docs/ingress-dns-recovery-report-2026-07-13.md
+- docs/ai-logs.md
+
+**Summary**
+
+Captured a fresh read-only incident snapshot. Proved the current Azure Public IP
+`134.112.8.66` routes successfully to Traefik, frontend, ArgoCD, and the
+protected Orders API when public DNS is bypassed with `curl --resolve`. Also
+proved DNS update alone is not sufficient yet: `catalog-db` has no active
+endpoint, `eurotransit-catalog` is `CrashLoopBackOff`, `eurotransit-keycloak-0`
+is stuck terminating on NotReady `vms21`, and `eurotransit-keycloak-service` has
+no ready endpoint.
+
+Found an additional hidden routing issue: the Keycloak operator-generated
+Ingress is host-only and has no explicit `/auth` path, while the EuroTransit
+frontend ingress owns `/`. `/auth/` currently returns the frontend rather than a
+Keycloak response. Prepared a repo fix that disables the operator-generated
+Keycloak ingress and adds an explicit `/auth` Prefix ingress.
+
+Prepared a Traefik Helm values fix that binds the current Public IP by name via
+`service.beta.kubernetes.io/azure-pip-name` and
+`service.beta.kubernetes.io/azure-load-balancer-resource-group`, while keeping
+the current Azure DNS label `g02-entrypoint-2026`. Removed the earlier
+two-replica Traefik change from the incident fix to avoid adding scheduling
+pressure while `vms21` is NotReady.
+
+Searched both accessible Azure subscriptions and Azure Resource Graph for the
+old IP `134.112.166.65`, label `g02-entrypoint`, and FQDN
+`g02-entrypoint.polandcentral.cloudapp.azure.com`; no matching Public IP
+resource was found. Authoritative DNS for `cpo2026.it` is OVH and still points
+both real domains to the old Azure FQDN.
+
+**Validation**
+
+- `kubectl get nodes -o wide`
+- `kubectl -n eurotransit get pods,svc,endpoints -o wide`
+- `kubectl describe ingress -n eurotransit eurotransit`
+- `kubectl describe ingress -n eurotransit eurotransit-keycloak-ingress`
+- `kubectl get certificates,orders,challenges -A`
+- `curl -k -I --resolve g02.cpo2026.it:443:134.112.8.66 https://g02.cpo2026.it/`
+- `curl -k -I --resolve argocd.g02.cpo2026.it:443:134.112.8.66 https://argocd.g02.cpo2026.it/`
+- `curl -k -I --resolve g02.cpo2026.it:443:134.112.8.66 https://g02.cpo2026.it/api/v1/catalog/products`
+- `helm template traefik traefik/traefik --version 41.0.2 --namespace traefik -f platform/traefik/values.yaml`
+- `helm template traefik traefik/traefik --version 41.0.2 --namespace traefik -f platform/traefik/values.yaml | kubectl -n traefik apply --dry-run=server -f -`
+- `kubectl apply --dry-run=server -f platform/keycloak/keycloak-cr.yaml -f platform/keycloak/keycloak-ingress.yaml`
+- `az network public-ip list --subscription b4055687-faee-4bee-8a51-ad027dcf6c12`
+- `az network public-ip list --subscription c7768585-2a5f-45e4-acb0-d6e083cbbc33`
+- `az graph query`
+- `dig @dns14.ovh.net g02.cpo2026.it +noall +answer`
+- `dig @dns14.ovh.net argocd.g02.cpo2026.it +noall +answer`
+
+**Confidence**
+
+High that the current Azure IP is the right endpoint to preserve, that Helm
+currently risks reverting the DNS label, and that catalog/Keycloak runtime
+health must be restored before declaring the incident resolved. Live application
+of the prepared fixes is pending explicit approval.
+
+---
+
+### 2026-07-13 16:25
+
+**Agent**
+
+Codex
+
+**Task**
+
+Investigate why Azure created a different Public IP instead of reusing the
+previous Traefik endpoint, using only repository, Git history, Kubernetes,
+Helm, and Azure evidence.
+
+**Files Modified**
+
+- docs/azure-public-ip-root-cause-2026-07-13.md
+- docs/ai-logs.md
+
+**Summary**
+
+Audited `platform/traefik/values.yaml`, Git history, live Traefik Service,
+Helm release state, Azure Public IPs, and the AKS Load Balancer. Found no
+historical or current `service.beta.kubernetes.io/azure-pip-name`,
+`service.beta.kubernetes.io/azure-load-balancer-resource-group`, or
+`loadBalancerIP` in the actual Traefik configuration. The original Traefik
+values were introduced with only `service.beta.kubernetes.io/azure-dns-label-name:
+g02-entrypoint`, which requests a DNS label but does not bind the Service to a
+specific Azure Public IP.
+
+Confirmed the current Public IP `134.112.8.66` is AKS-managed and tagged for
+`traefik/traefik`, with generated name
+`kubernetes-a18745822eff349198a98b394c413147`. The old IP `134.112.166.65` and
+old label `g02-entrypoint` were not present in the current subscription's Public
+IP inventory. Helm history shows a single Traefik install, not a later
+upgrade/reinstall, while live Helm values still contain the old DNS label.
+
+**Validation**
+
+- `rg -n "azure-pip-name|azure-load-balancer|azure-dns-label-name|loadBalancerIP|g02-entrypoint" .`
+- `git log --all --follow -p -- platform/traefik/values.yaml`
+- `git log --all -S azure-pip-name --oneline --decorate -- .`
+- `git log --all -S loadBalancerIP --oneline --decorate -- .`
+- `kubectl -n traefik get svc traefik -o yaml`
+- `helm get values traefik -n traefik -o yaml`
+- `helm history traefik -n traefik`
+- `az network public-ip list -o json`
+- `az network lb list -g MC_G_06_Lab02cluster_polandcentral -o json`
+
+**Confidence**
+
+High. Azure behaved correctly for a Service that did not reference a persistent
+Public IP; the root cause is missing Azure Public IP binding in the Traefik
+Service design, not a removed configuration regression.
+
+---
+
+### 2026-07-13 16:05
+
+**Agent**
+
+Codex
+
+**Task**
+
+Continue AKS recovery investigation without changing cluster state before
+approval.
+
+**Files Modified**
+
+- docs/ingress-dns-recovery-report-2026-07-13.md
+- docs/ai-logs.md
+
+**Summary**
+
+Re-verified live cluster state. `aks-cloudlab02-33508055-vms21` remains
+`Ready,SchedulingDisabled`, while four critical pods remain Pending:
+`eurotransit-keycloak-0`, `inventory-db-2`, and Kafka brokers `pool-0`/`pool-2`.
+Traefik is currently `1/1 Ready`, but has restarted again and remains a single
+replica on `aks-cloudlab02-33508055-vms23`, the node with recent kubelet,
+container runtime, CoreDNS, and VNet DNS instability.
+
+Added evidence that DNS is necessary but still not sufficient: bypassing public
+DNS with `curl --resolve` reaches the current IP, but HTTPS still fails or
+returns 503 while TLS secrets are absent and Keycloak has no endpoints. Azure
+quota also blocks immediate scale-out because `Total Regional vCPUs` is already
+`6/6`, making uncordoning the healthy existing `vms21` the first recommended
+non-destructive recovery step.
+
+Refreshed Helm repo metadata and validated Traefik values against chart
+`41.0.2`. A draft `logs:` block was rejected by the chart schema and was
+corrected to `log.level` plus `accessLog.enabled` before any live Helm change.
+
+After explicit approval, ran `kubectl uncordon
+aks-cloudlab02-33508055-vms21`. This cleared all Pending pods:
+`eurotransit-keycloak-0`, `inventory-db-2`, and Kafka brokers `pool-0`/`pool-2`
+all scheduled onto `vms21` and became Ready. The remaining live blocker is
+Traefik: it is still one replica on `vms23`, and `vms23` continues to report
+`NotReady`/kubelet instability, leaving the Traefik Deployment at `0/1`
+available.
+
+**Validation**
+
+- `kubectl get nodes -o wide`
+- `kubectl get pods -A --field-selector=status.phase=Pending -o wide`
+- `kubectl -n traefik get pods,deploy,svc,endpointslice -o wide`
+- `az vm list-usage -l polandcentral -o table`
+- `helm template traefik traefik/traefik --version 41.0.2 --namespace traefik -f platform/traefik/values.yaml`
+- `helm template traefik traefik/traefik --version 41.0.2 --namespace traefik -f platform/traefik/values.yaml | kubectl -n traefik apply --dry-run=server -f -`
+- `kubectl uncordon aks-cloudlab02-33508055-vms21`
+- `kubectl -n eurotransit wait pod/eurotransit-keycloak-0 --for=condition=Ready --timeout=180s`
+- `kubectl -n eurotransit wait pod/inventory-db-2 --for=condition=Ready --timeout=180s`
+- `kubectl -n kafka wait pod/eurotransit-kafka-eurotransit-pool-0 --for=condition=Ready --timeout=180s`
+- `kubectl -n kafka wait pod/eurotransit-kafka-eurotransit-pool-2 --for=condition=Ready --timeout=180s`
+
+**Confidence**
+
+High that uncordoning `vms21` was the correct first recovery action. High that
+the next cluster action should be the validated Traefik Helm upgrade to preserve
+`g02-entrypoint-2026` in Helm state and scale Traefik to two replicas; that
+still requires explicit approval because it changes production ingress.
+
+---
+
+### 2026-07-13 15:50
+
+**Agent**
+
+Codex
+
+**Task**
+
+Create a new branch and independently audit the remaining ingress/DNS incident
+without assuming DNS is the only root cause.
+
+**Files Modified**
+
+- platform/traefik/values.yaml
+- docs/ingress-dns-recovery-report-2026-07-13.md
+- docs/ai-logs.md
+
+**Summary**
+
+Created branch `feat/ingress-dns-recovery` from `dev`.
+
+Verified that DNS for `cpo2026.it` is managed by OVH, not Azure DNS:
+`dns14.ovh.net` and `ns14.ovh.net` are authoritative. Both
+`g02.cpo2026.it` and `argocd.g02.cpo2026.it` currently have OVH CNAME records
+to the old Azure label `g02-entrypoint.polandcentral.cloudapp.azure.com`, which
+resolves to `134.112.166.65`.
+
+Audited Azure Public IPs and Load Balancer state. The old IP `134.112.166.65`
+and old label `g02-entrypoint` are not present in the current subscription. The
+current Traefik IP is `134.112.8.66` with label `g02-entrypoint-2026`.
+
+Challenged the DNS-only hypothesis and found hidden live issues: Traefik is a
+single replica on unstable node `aks-cloudlab02-33508055-vms23`, repeatedly
+failing `/ping` liveness/readiness and leaving the Traefik Deployment `0/1`.
+Keycloak is also Pending with no service endpoints, and node capacity is tight
+(`Too many pods`, `Insufficient cpu`, `Insufficient memory`).
+
+Updated `platform/traefik/values.yaml` to keep the current DNS label,
+use chart-supported `log.*` / `accessLog.*` keys, and run Traefik with two replicas plus
+topology spread. A PDB was intentionally not kept because the locally rendered
+Traefik chart emits `policy/v1beta1`, which Kubernetes 1.33 rejects.
+
+**Validation**
+
+- `helm template traefik traefik/traefik --namespace traefik -f platform/traefik/values.yaml`
+- `helm template traefik traefik/traefik --namespace traefik -f platform/traefik/values.yaml | kubectl -n traefik apply --dry-run=server -f -`
+- `helm lint deploy/charts/eurotransit`
+- `helm template eurotransit deploy/charts/eurotransit --namespace eurotransit`
+
+**Confidence**
+
+High that DNS must be updated in OVH, but also high that DNS alone is not
+sufficient until Traefik/node stability and Keycloak readiness are addressed.
+
+---
+
 ### 2026-07-11 17:55
 
 **Agent**
@@ -875,3 +1129,58 @@ structure, but they require cluster validation and a real sealed client secret.
 
 No Kubernetes service names, image repositories, API paths, or Kafka topics were
 changed.
+
+---
+
+### 2026-07-13 18:08
+
+**Agent**
+
+Codex
+
+**Task**
+
+Recover EuroTransit AKS ingress path and document the remaining DNS-only cutover.
+
+**Files Modified**
+
+- `platform/traefik/values.yaml`
+- `platform/keycloak/keycloak-cr.yaml`
+- `platform/keycloak/keycloak-ingress.yaml`
+- `docs/ingress-dns-recovery-report-2026-07-13.md`
+- `docs/azure-public-ip-root-cause-2026-07-13.md`
+- `docs/ai-logs.md`
+
+**Summary**
+
+Pinned Traefik to the current Azure Public IP resource and DNS label, replaced
+the Keycloak operator host-only ingress with an explicit `/auth` Traefik
+Ingress, recovered flapping AKS nodes with Azure VM redeploy/restart actions,
+temporarily scaled non-public controllers down to free pod capacity, restored
+those controllers, and verified the public path through `134.112.8.66`.
+
+**Verification**
+
+- All AKS nodes are `Ready`.
+- Traefik `LoadBalancer` remains `134.112.8.66`.
+- EuroTransit, PostgreSQL, ArgoCD, cert-manager, monitoring, and Kafka pods are
+  Ready.
+- ArgoCD application `eurotransit` is `Synced` and `Healthy`.
+- Direct tests with `--resolve` returned:
+  - `/` -> `HTTP/2 200`
+  - `/auth/` -> `HTTP/2 302`
+  - `/api/v1/catalog/products` -> `HTTP/2 200`
+  - `/api/v1/orders` -> `HTTP/2 401`
+  - `argocd.g02.cpo2026.it/` -> `HTTP/2 200`
+
+**Remaining Action**
+
+Manual OVH DNS update only:
+
+```text
+g02.cpo2026.it        CNAME g02-entrypoint-2026.polandcentral.cloudapp.azure.com
+argocd.g02.cpo2026.it CNAME g02-entrypoint-2026.polandcentral.cloudapp.azure.com
+```
+
+cert-manager certificates remain pending until public DNS points to the current
+Traefik endpoint.

@@ -5,11 +5,9 @@
 # v2beta1/v2alpha1) - not assumed from memory:
 # - db credentials are referenced via usernameSecret/passwordSecret, which
 #   only resolve in this CR's own namespace (see keycloak-db-cluster.yaml)
-# - there is no first-class "path prefix" field; path-based deployment goes
-#   through additionalOptions, which maps directly to Keycloak's own config
-#   keys (https://www.keycloak.org/server/all-config) - http-relative-path
-#   is the key that makes Keycloak generate URLs consistent with the /auth
-#   prefix Traefik routes to it
+# - there is no first-class "path prefix" field on the operator-generated
+#   Ingress. Path-based routing is provided by keycloak-ingress.yaml, while
+#   http-relative-path makes Keycloak generate URLs consistent with /auth.
 # - bootstrapAdmin.user.secret references a Secret with username/password
 #   keys; unlike CNPG, Keycloak does NOT auto-generate this - it must be
 #   created and sealed separately (see the accompanying instructions)
@@ -52,7 +50,7 @@ spec:
   http:
     httpEnabled: true
   ingress:
-    enabled: true
+    enabled: false
     className: traefik
   additionalOptions:
     - name: http-relative-path
