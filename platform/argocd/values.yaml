@@ -10,7 +10,11 @@ server:
     type: ClusterIP
   ingress:
     enabled: true
-    className: traefik
+    # Verified against the actual installed chart (argo-cd-10.1.3)'s own
+    # template - it reads .server.ingress.ingressClassName, not .className.
+    # The wrong key name was silently ignored (Helm doesn't error on unused
+    # values), leaving the rendered Ingress with no ingressClassName at all.
+    ingressClassName: traefik
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
       traefik.ingress.kubernetes.io/router.middlewares: argocd-redirect-https@kubernetescrd

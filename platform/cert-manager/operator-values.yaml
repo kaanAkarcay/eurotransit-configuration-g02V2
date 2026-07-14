@@ -1,0 +1,47 @@
+# cert-manager 1.21.0 (jetstack/cert-manager Helm chart, verified via
+# `helm search repo jetstack/cert-manager --versions`, not assumed).
+#
+# Installs the CRDs as part of the release (crds.enabled) rather than
+# requiring a separate manual apply - simpler for a single-cluster setup
+# with nothing else managing them.
+#
+# Real resources.requests set on all 3 components (controller, webhook,
+# cainjector) so none of them run BestEffort QoS - the chart's own default
+# is empty (`resources: {}`), and an unrequested pod was exactly what let
+# keycloak-db get evicted under memory pressure earlier (see docs/ai-logs.md).
+# cert-manager's footprint is small and well-documented; sized with headroom,
+# not from observed usage on this cluster specifically.
+#
+# Applied manually, via Helm:
+#   helm repo add jetstack https://charts.jetstack.io
+#   helm upgrade --install cert-manager jetstack/cert-manager \
+#     --version v1.21.0 --namespace cert-manager --create-namespace \
+#     -f platform/cert-manager/operator-values.yaml
+crds:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+webhook:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+cainjector:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
