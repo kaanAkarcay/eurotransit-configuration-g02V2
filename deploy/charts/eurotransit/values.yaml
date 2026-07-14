@@ -181,7 +181,9 @@ payments:
   security:
     jwt:
       audience: payments
-paymentGatewaySim:
+# Key deliberately matches the service/directory name (dashed): CI's rollout
+# step bumps `."<service>".restartedAt` and must land on this block.
+payment-gateway-sim:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payment-gateway-sim
@@ -191,7 +193,13 @@ paymentGatewaySim:
   service:
     type: ClusterIP
     port: 8080
-  env: []
+  stripe:
+    # false = LocalChargeGateway (declines above 500.00), no secret needed.
+    # Flip to true only after the payment-gateway-sim-stripe Secret exists in
+    # the cluster (key: stripe-secret-key) — with it enabled and no key the
+    # pod fails fast at startup by design.
+    enabled: false
+    paymentMethod: pm_card_visa
 notifications:
   replicaCount: 1
   image:
