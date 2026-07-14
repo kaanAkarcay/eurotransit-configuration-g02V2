@@ -5,6 +5,74 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-14 19:15
+
+**Agent**
+
+Claude Opus 4.8
+
+**Task**
+
+Make `payment-gateway-sim` deployable: CI inclusion (application repo, separate
+PR), and completing the Helm wiring this repo already gained in `ad3693a`.
+
+**Files Modified**
+
+- `deploy/charts/eurotransit/templates/payment-gateway-sim-deployment.yaml`
+- `deploy/charts/eurotransit/templates/payment-gateway-sim-service.yaml`
+- `deploy/charts/eurotransit/values.yaml`
+- `deploy/charts/eurotransit/templates/servicemonitor-backend.yaml`
+- `docs/ai-logs.md`
+
+**Summary**
+
+Built on the templates added in `ad3693a` rather than duplicating them; four
+gaps closed:
+
+1. Values key renamed `paymentGatewaySim` -> `payment-gateway-sim`: CI's rollout
+   step bumps `."<service>".restartedAt` using the service's directory name, so
+   the camelCase key would never receive the bump and pods would never roll.
+   Templates now read it via `index`.
+2. Env wired: `STRIPE_ENABLED` from `stripe.enabled` (set to **false** — first
+   deploy runs the LocalChargeGateway; the app fails fast at startup if Stripe
+   is enabled with a blank key, so as merged the pod would have crash-looped),
+   `STRIPE_SECRET_KEY` via `secretKeyRef` to `payment-gateway-sim-stripe`
+   (`optional: true`, safe because the app's own fail-fast guards the enabled
+   case), `STRIPE_PAYMENT_METHOD` from values.
+3. Probes switched from `tcpSocket` to the actuator readiness/liveness groups
+   (verified enabled in the service's application.yaml): an open TCP port says
+   nothing about readiness, and the DoD requires readiness to reflect actual
+   ability to serve.
+4. `payment-gateway-sim` added to the ServiceMonitor list (it serves
+   `/actuator/prometheus`).
+
+This closes the deployment TODO left open by the 2026-07-11 17:55 entry.
+
+**Potential Risks**
+
+- Enabling Stripe requires the `payment-gateway-sim-stripe` Secret first; the
+  sealed-secrets controller's presence on the cluster is unverified (a prior
+  log entry says it may never have been installed), so the secret may need
+  manual `kubectl create secret` like `orders-service-client`.
+- First `stripe.enabled=true` flip is also the first-ever live Stripe call:
+  the wire format is validated only against WireMock stubs.
+- Argo CD tracks `main`; merging to `dev` alone deploys nothing.
+
+**Confidence**
+
+High — chart rendered with `helm template` and the gateway Deployment/Service/
+ServiceMonitor inspected field-by-field; CI's quoted yq expression verified
+empirically against both dashed and plain keys.
+
+**Notes**
+
+The 401 reported as this task's symptom does not come from this service (it has
+no security dependency at all): it is Payments rejecting calls lacking a JWT
+with `aud=payments`. Tracked as a separate Keycloak realm task.
+
+---
+
+
 ### 2026-07-13 16:45
 
 **Agent**
