@@ -5,6 +5,183 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-13 20:31
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Get the real frontend URL (`g02.cpo2026.it`) actually reachable, after
+discovering OVH's CNAME had always pointed at the original `g02-entrypoint`
+label rather than `g02-entrypoint-2026`.
+
+**Files Modified**
+
+- platform/traefik/values.yaml
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Reclaimed the `g02-entrypoint` label on Traefik's existing pinned Public IP
+to match OVH's existing CNAME, instead of updating OVH. `helm upgrade` hit
+a field-manager conflict (a prior `kubectl annotate` had taken ownership of
+that annotation away from Helm's server-side apply); applied the change
+directly via `kubectl` to unblock, nudged Azure's cloud-controller-manager
+to reconcile (it doesn't react to no-op patches), then reconciled Helm's
+state afterward with `helm upgrade ... --force-conflicts` so Helm owns the
+field again going forward, and removed the temporary nudge annotation.
+Verified with 5 repeated real (non-overridden) DNS lookups and a real curl
+- `g02.cpo2026.it` now serves the actual frontend over HTTPS with a valid
+cert, confirmed reachable from a real browser. This closes out the
+external-DNS saga end-to-end.
+
+---
+
+### 2026-07-13 19:57
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Determine whether the user's own old Azure subscription (from a prior,
+unrelated lab exercise) held the orphaned Public IP blocking reuse of the
+`g02-entrypoint` DNS label, after a teammate's earlier incident report
+concluded no accessible subscription had it.
+
+**Files Modified**
+
+- docs/ai-logs.md (this entry)
+- (Azure resource change, not a repo file): deleted AKS cluster
+  `kaan_tryout` and its node resource group in subscription
+  `c7768585-2a5f-45e4-acb0-d6e083cbbc33`
+
+**Summary**
+
+Direct re-query of the subscription found the IP immediately -
+`kubernetes-a269513be8fe94c0e8683afdd0109a04` / `134.112.166.65` / label
+`g02-entrypoint`, live-attached to an old personal AKS lab cluster the user
+owned, unrelated to this project. With the user's confirmation, deleted
+that whole cluster (cleaner than detaching just the one IP, since it was
+unused). Verified via `az aks show` (`ResourceNotFound`), `az network
+public-ip list` (empty), and Azure's `CheckDnsNameAvailability` API
+(`available: true`) that the `g02-entrypoint` label is genuinely free.
+Team decided to stay on the already-working `g02-entrypoint-2026` label
+rather than repoint Traefik, so no further cluster/config changes followed.
+This resolves the external-DNS saga - the previously-assumed-necessary OVH
+CNAME update for `cpo2026.it` was never actually required once
+`g02-entrypoint-2026` was verified end-to-end.
+
+---
+
+### 2026-07-13 13:33
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+A teammate's incident report claimed the frontend `ERR_CONNECTION_TIMED_OUT`
+was caused by a Traefik middleware name mismatch and a missing TLS secret.
+Investigate both claims directly rather than act on them, then review a
+second, more thorough report from the same teammate covering DNS, ArgoCD,
+and Keycloak.
+
+**Files Modified**
+
+- platform/cert-manager/operator-values.yaml (created)
+- platform/cert-manager/cluster-issuer.yaml (created)
+- platform/argocd/values.yaml
+- platform/traefik/values.yaml
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+First claim (middleware name mismatch) didn't hold up - checked Traefik's
+own logs directly and found zero middleware errors; `eurotransit-redirect-
+https@kubernetescrd` is actually the *correct* reference format for a
+namespaced Middleware CRD referenced from a plain Ingress. Second claim
+(missing TLS secret) was real, but the actual root cause was one level
+deeper than stated: cert-manager was never installed in this cluster at
+all - no CRDs, no controller, nothing watching the
+`cert-manager.io/cluster-issuer` annotation already sitting inert on the
+Ingress. Installed it (jetstack/cert-manager v1.21.0, verified via `helm
+search repo`, real `resources.requests` on all 3 components so none run
+BestEffort QoS) plus a `letsencrypt-prod` ClusterIssuer. Confirmed
+end-to-end: ACME account registered, `ingress-shim` auto-created the
+Certificate/Order/Challenge chain with no manual wiring, HTTP-01 challenge
+correctly attempted - and correctly stuck in Pending, because it can't
+reach `g02.cpo2026.it` over the public internet, the same still-unresolved
+Public IP/DNS conflict from earlier this week.
+
+A second, more detailed incident report from the same teammate (saved as a
+local markdown file, reviewed directly) turned out to be substantially
+accurate and revealed real progress: Traefik now has a genuine external IP
+(`134.112.8.66`), just under a *different* Azure DNS label
+(`g02-entrypoint-2026`) than what's committed in git (`g02-entrypoint`) -
+live/git drift, not investigated further since the underlying label
+conflict is still unresolved. Verified two of the report's other claims
+directly before acting: `eurotransit-keycloak-service` really didn't exist
+- traced to the Keycloak Operator's entire Deployment being gone (not
+scaled down, deleted outright), which makes sense once you notice it's
+manually `kubectl apply -k` installed, not GitOps- or operator-tracked, so
+a full cluster restart doesn't bring it back the way Argo CD/CNPG/Strimzi-
+managed things do. Reapplied the same kustomize overlay (with the same
+namespace-transform fix from the original install) and confirmed the
+Service came back and the JWK endpoint serves real content again - this
+directly restores function to the JWT decoder fix made earlier this week
+for orders/inventory/payments, which depends on that exact Service.
+
+Also verified and fixed a second real bug from the report: ArgoCD's own
+Ingress had no `ingressClassName` set despite `values.yaml` explicitly
+configuring `server.ingress.className: traefik`. Pulled the actual
+installed chart (argo-cd-10.1.3) locally and confirmed its template reads
+`.server.ingress.ingressClassName`, not `.className` - the wrong key was
+silently ignored (Helm doesn't error on unused values). Fixed the key name,
+applied via `helm upgrade`, confirmed the Ingress now shows `CLASS: traefik`.
+
+Committed the live Traefik DNS label drift to git (`g02-entrypoint` ->
+`g02-entrypoint-2026`) so a future `helm upgrade` from a stale checkout
+doesn't revert it and re-trigger the original `DnsRecordInUse` conflict -
+Traefik itself isn't Argo CD-managed, so this needs a manual `helm upgrade`
+to actually apply, merging to `main` alone won't trigger anything.
+
+**Potential Risks**
+
+- The real remaining blocker for both TLS certificates and all external
+  access is the public DNS record for `g02.cpo2026.it` /
+  `argocd.g02.cpo2026.it` still pointing at the old, dead IP - entirely
+  outside this cluster, needs whoever manages `cpo2026.it`'s DNS
+  (registrar-level, not Azure/kubectl).
+- The Keycloak Operator's Deployment disappearing across a cluster restart
+  is a real, structural gap - anything installed via a one-off `kubectl
+  apply -k`/`apply -f` outside Argo CD or an operator's own lifecycle will
+  have the same fragility on the next restart, not just Keycloak.
+- `platform/traefik/values.yaml`'s DNS-label fix is written but not yet
+  committed/merged as of this entry - human is handling that separately.
+
+**Confidence**
+
+High - every claim from both incident reports was independently verified
+against live cluster state (Traefik logs, `kubectl describe`, a locally-
+pulled chart's actual template source) before being acted on or dismissed,
+not taken at face value either way.
+
+**Notes**
+
+Second time this week a teammate's independent diagnosis turned out
+partially right, partially one layer short of the real root cause
+(middleware claim: wrong; TLS claim: right symptom, cert-manager-missing
+was the actual cause). Worth continuing to verify rather than either
+blindly trust or blindly dismiss external diagnoses - both directions have
+cost real time this week.
+
+---
+
 ### 2026-07-11 17:55
 
 **Agent**
