@@ -78,7 +78,7 @@ payments:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payments
     tag: latest
     pullPolicy: Always
-  restartedAt: "2026-07-14T09:50:16Z-2fd3865e3c95d45b4aedf3ecf5ad014be9893cb8"
+  restartedAt: "2026-07-14T10:45:02Z-e865f04bb1d5e4c094d97f3f4eff08fad35c0513"
   service:
     type: ClusterIP
     port: 8080
