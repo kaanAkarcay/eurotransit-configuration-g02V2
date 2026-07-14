@@ -6,10 +6,18 @@ providers:
 service:
   type: LoadBalancer
   annotations:
-    service.beta.kubernetes.io/azure-dns-label-name: g02-entrypoint-2026
+    # "g02-entrypoint" reclaimed 2026-07-13 (see docs/ai-logs.md) and pinned
+    # to the team's existing Public IP - do not change back to
+    # "g02-entrypoint-2026" or drop the pip-name/resource-group pinning.
+    service.beta.kubernetes.io/azure-dns-label-name: g02-entrypoint
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: MC_G_06_Lab02cluster_polandcentral
+    service.beta.kubernetes.io/azure-pip-name: kubernetes-a18745822eff349198a98b394c413147
 
-logs:
-  general:
-    level: DEBUG
-  access:
-    enabled: true
+# traefik-41.0.2's own chart templates read `log:`/`accessLog:`, not
+# `logs.general`/`logs.access` - the latter is silently ignored by Helm
+# (confirmed by pulling the chart locally and grepping its templates).
+log:
+  level: DEBUG
+
+accessLog:
+  enabled: true
