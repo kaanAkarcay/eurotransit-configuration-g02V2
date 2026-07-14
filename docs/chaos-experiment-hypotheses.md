@@ -52,6 +52,15 @@ These hypotheses are formulated before the experiments are executed. Each will b
 
 **Hypothesis:** Once the committed Orders image enforces an Inventory timeout, a controlled network partition causes the `inventory-client` circuit breaker to record failures and open after the configured sample size and failure-rate threshold are reached. This experiment is for threshold tuning only; it must not be used as proof of timeout behavior while the committed Orders source lacks `@TimeLimiter` or an equivalent HTTP client timeout.
 
+**Steady state:** Orders, Inventory, Payments, Kafka, and PostgreSQL are healthy. Checkout load is stable and high enough to produce at least `minimum-number-of-calls` for `inventory-client` inside the circuit-breaker sliding window. No active chaos objects exist before the run.
+
+**What we will observe:**
+- Grafana/Prometheus: `inventory-client` call count exceeds `minimum-number-of-calls` during the fault window
+- Grafana/Prometheus: `inventory-client` failure rate rises and the circuit breaker transitions CLOSED -> OPEN
+- Grafana/Prometheus: not-permitted calls appear while the breaker is OPEN
+- Kubernetes: Orders and Inventory pod restart counters do not increase from liveness churn
+- Database/business checks: affected orders either reach terminal state or are explicitly accounted for
+
 **Validation criteria:** `inventory-client` transitions CLOSED -> OPEN under confirmed Inventory unavailability, not-permitted calls appear while OPEN, Orders does not restart, Inventory recovers after the partition, and any threshold change is justified by observed metrics rather than assumed behavior.
 
 Detailed runbook: `docs/resilience/orders-inventory-circuit-breaker-chaos.md`.

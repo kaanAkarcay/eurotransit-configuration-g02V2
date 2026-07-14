@@ -5,6 +5,73 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-14 20:20
+
+**Agent**
+
+Codex
+
+**Task**
+
+Prepare repository-side Orders -> Inventory circuit-breaker tuning through a
+Chaos Mesh experiment and runbook.
+
+**Files Modified**
+
+- platform/chaos-mesh/experiments/orders-inventory-network-failure-schedule.yaml
+- docs/resilience/orders-inventory-circuit-breaker-chaos.md
+- docs/chaos-experiment-hypotheses.md
+- docs/ai-logs.md
+
+**Summary**
+
+Created a suspended draft `NetworkChaos` Schedule for the Orders -> Inventory
+failure path and documented how to execute it safely through the existing
+GitOps/Chaos Mesh conventions. The runbook records prerequisite findings:
+committed Orders currently has an `inventory-client` circuit breaker but no
+committed `@TimeLimiter` on the Inventory call, Resilience4j defaults
+`minimumNumberOfCalls` to 100 if omitted, and the live cluster currently lacks
+the Chaos Mesh namespace, CRDs, and Argo CD Application.
+
+No circuit-breaker thresholds were changed because the experiment has not run.
+The documentation now calls out QPS/sample-size requirements for the 60 second
+fault window, a short selector smoke run before the full experiment, the limits
+of an all-pod partition for threshold tuning, and the possibility of a future
+one-shot `Workflow` only after the live Chaos Mesh version/CRDs are confirmed.
+
+**Validation**
+
+- `helm lint deploy/charts/eurotransit`
+- `helm template eurotransit deploy/charts/eurotransit --namespace eurotransit`
+- `git diff --check`
+- YAML parsing for Chaos Mesh and Argo CD manifests
+- `kubectl apply --dry-run=server -f platform/argocd/chaos-mesh-application.yaml`
+- Server dry-run of the new Chaos Mesh Schedule was blocked as expected because
+  the live cluster does not currently have Chaos Mesh CRDs installed.
+
+**Potential Risks**
+
+- The experiment is a repository-side draft only; it cannot run until Chaos Mesh
+  is installed or bootstrapped into the live GitOps flow.
+- Timeout-sensitive tuning remains blocked until the deployed Orders image
+  actually enforces an Inventory timeout.
+- The current manifest uses a full Orders -> Inventory partition; finer
+  threshold calibration should use a later partial-failure run.
+
+**Confidence**
+
+Medium. The Git-side implementation and validations are straightforward, but
+runtime tuning remains blocked by missing live Chaos Mesh components and the
+application-side timeout prerequisite.
+
+**Notes**
+
+This branch completes the Git preparation for the task, not the live resilience
+validation. Do not mark the thresholds tuned until a controlled run has produced
+Prometheus/Resilience4j evidence.
+
+---
+
 ### 2026-07-13 16:45
 
 **Agent**

@@ -95,6 +95,24 @@ This follows the existing project pattern for Chaos Mesh experiments:
   manifest.
 - Do not auto-execute chaos from Git.
 
+The `duration: 60s` value is a fault-injection window, not a guarantee that the
+circuit breaker had enough samples to make a decision. A run is useful only if
+checkout load produces at least `minimum-number-of-calls` for `inventory-client`
+inside the sliding window. If QPS is low, increase controlled load or run a
+longer experiment rather than interpreting a no-open result as a tuned threshold.
+
+The manifest currently uses `mode: all` to prove the hard failure path. That is
+appropriate for an initial binary failure validation. For finer threshold tuning,
+run a follow-up partial-failure experiment, for example with Chaos Mesh
+`fixed-percent` against a subset of Inventory pods, so the observed failure rate
+can calibrate `failure-rate-threshold` more gradually.
+
+The project currently stores its Chaos Mesh experiments as suspended `Schedule`
+resources. If the team standardizes on one-shot manual experiments later, a
+Chaos Mesh `Workflow` can be cleaner than a suspended recurring Schedule. Do not
+switch this artifact to `Workflow` until the live Chaos Mesh CRDs and supported
+version are confirmed.
+
 No circuit breaker thresholds are changed in this branch. Threshold changes must
 be driven by runtime observations, not guessed from static configuration.
 
@@ -149,7 +167,15 @@ errors, and Stage 1 retry/terminal-state behavior.
    kubectl -n chaos-mesh get schedule orders-inventory-network-failure
    ```
 
-4. Verify the Orders runtime prerequisite before unsuspending:
+4. Verify that the selectors match the intended pods before any fault is
+   triggered:
+
+   ```bash
+   kubectl -n eurotransit get pods -l app.kubernetes.io/name=orders,app.kubernetes.io/instance=eurotransit
+   kubectl -n eurotransit get pods -l app.kubernetes.io/name=inventory,app.kubernetes.io/instance=eurotransit
+   ```
+
+5. Verify the Orders runtime prerequisite before unsuspending:
 
    ```bash
    kubectl -n eurotransit exec deploy/eurotransit-orders -- printenv SPRING_APPLICATION_JSON
@@ -161,18 +187,24 @@ errors, and Stage 1 retry/terminal-state behavior.
    enforcement is implemented. Do not infer this only from
    `SPRING_APPLICATION_JSON`.
 
-5. Generate controlled checkout load from outside the cluster or from a temporary
+6. Run a short smoke check before the full load experiment. Use a 10-15 second
+   one-shot/manual run or temporarily patch a copy of the Schedule duration to
+   `15s`, then confirm that only the intended Orders -> Inventory traffic is
+   affected. Resuspend or delete the smoke object before continuing.
+7. Generate controlled checkout load from outside the cluster or from a temporary
    load pod. Keep the load steady enough to exceed `minimum-number-of-calls: 5`
-   in the circuit breaker sliding window.
-6. Unsuspend for one controlled run:
+   in the circuit breaker sliding window during the fault. Record the actual
+   request rate; if fewer than 5 Inventory calls are observed in the window, the
+   experiment did not test breaker opening.
+8. Unsuspend for one controlled run:
 
    ```bash
    kubectl -n chaos-mesh patch schedule orders-inventory-network-failure --type=merge -p '{"spec":{"suspend":false}}'
    ```
 
-7. Watch metrics and events during the 60 second partition and for at least 2
+9. Watch metrics and events during the 60 second partition and for at least 2
    minutes after it ends.
-8. Resuspend immediately after the run:
+10. Resuspend immediately after the run:
 
    ```bash
    kubectl -n chaos-mesh patch schedule orders-inventory-network-failure --type=merge -p '{"spec":{"suspend":true}}'
@@ -199,6 +231,10 @@ Do not modify thresholds until at least one controlled run has evidence.
   enforcement is added, add or tune `slow-call-duration-threshold` and
   `slow-call-rate-threshold` for `inventory-client` based on observed p95/p99
   Inventory call latency.
+- If the full partition only proves the binary failure path, run a partial
+  `fixed-percent` experiment before changing `failure-rate-threshold`; threshold
+  tuning is stronger when based on graded failure rates rather than one
+  all-down scenario.
 
 ## Rollback
 
