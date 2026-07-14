@@ -1052,3 +1052,194 @@ structure, but they require cluster validation and a real sealed client secret.
 
 No Kubernetes service names, image repositories, API paths, or Kafka topics were
 changed.
+
+---
+
+### 2026-07-13 13:55
+
+**Agent**
+
+Codex
+
+**Task**
+
+Make Orders/Payments resilience runtime policy GitOps-managed from the
+configuration repo.
+
+**Files Modified**
+
+- deploy/charts/eurotransit/values.yaml
+- deploy/charts/eurotransit/templates/orders-deployment.yaml
+- deploy/charts/eurotransit/templates/payments-deployment.yaml
+- docs/resilience/runtime-resilience-config.md
+- docs/ai-logs.md
+
+**Summary**
+
+Added Helm values that render into `SPRING_APPLICATION_JSON` for Orders and
+Payments. Orders now has GitOps-owned Resilience4j settings for
+`inventory-client` and `payments-client`, including circuit breaker, timeout,
+bounded retry, exponential backoff, and jitter. Payments now has GitOps-owned
+gateway circuit-breaker settings and receives `GATEWAY_URL` from Helm values.
+
+Documented the boundary that true bulkhead isolation through separate HTTP
+connection pools cannot be completed by Helm alone; the application image must
+create per-downstream client pools for Orders->Inventory, Orders->Payments, and
+Payments->gateway.
+
+Added the live validation result to the resilience runtime report: local Helm
+lint/template passed, `kubectl apply --dry-run=server` passed against the AKS API
+server, ArgoCD is currently synced to `main`, and the branch changes are not live
+until merge/sync. The report also records the live probe-restart risk observed
+on Orders and Payments.
+
+**Potential Risks**
+
+- These settings only take effect for Resilience4j instances actually used by
+  the running application image.
+- Separate connection-pool bulkheads still require application support; this
+  config change makes the runtime policy declarative but does not create pools
+  inside the JVM by itself.
+- `payment-gateway-sim` is referenced as the Payments gateway URL, but this
+  configuration repo still does not define a Deployment/Service for that
+  adapter.
+- Live pods showed recent liveness/readiness-driven restarts; that is a separate
+  operational issue from this resilience configuration change.
+
+**Confidence**
+
+Medium — Helm owns the declarative runtime policy now, but full DoD completion
+depends on the matching application client implementation and live cluster
+validation.
+
+---
+
+### 2026-07-13 14:22
+
+**Agent**
+
+Codex
+
+**Task**
+
+Independently re-audit the Traefik/Azure DNS incident and fix live hidden
+ingress issues.
+
+**Files Modified**
+
+- platform/traefik/values.yaml
+- docs/ingress-incident-report-2026-07-13.md
+- docs/ai-logs.md
+
+**Summary**
+
+Verified that public DNS is still wrong: `g02.cpo2026.it` and
+`argocd.g02.cpo2026.it` still resolve through the old
+`g02-entrypoint.polandcentral.cloudapp.azure.com` endpoint to `134.112.166.65`,
+while the active Traefik LoadBalancer is `134.112.8.66` with DNS label
+`g02-entrypoint-2026`.
+
+Found that DNS was not the only issue. Traefik and several EuroTransit
+Deployment pods were on AKS node `aks-cloudlab02-33508055-vms23`, which was
+`NotReady`, causing external requests to the current LoadBalancer IP to time
+out. Rescheduled Traefik and Deployment-managed application pods onto a Ready
+node by deleting stale pod objects. Also found ArgoCD Ingress referenced
+`argocd-redirect-https@kubernetescrd` but the live Middleware was missing;
+applied `platform/argocd/middleware.yaml`.
+
+Updated `platform/traefik/values.yaml` so future Helm upgrades keep
+`service.beta.kubernetes.io/azure-dns-label-name: g02-entrypoint-2026` instead
+of reverting to the old `g02-entrypoint` label. Also updated the Traefik logging
+values from old top-level `log`/`accessLog` keys to the chart-supported
+`logs.general`/`logs.access` structure after `helm template traefik
+traefik/traefik -f platform/traefik/values.yaml` exposed a schema failure.
+
+**Validation**
+
+- `curl -H 'Host: g02.cpo2026.it' http://134.112.8.66/` returns HTTP 308 to
+  `https://g02.cpo2026.it/`.
+- `curl -k --resolve g02.cpo2026.it:443:134.112.8.66 https://g02.cpo2026.it/`
+  returns HTTP 200 from nginx.
+- `curl -k --resolve g02.cpo2026.it:443:134.112.8.66
+  https://g02.cpo2026.it/api/v1/catalog/products` returns HTTP 200 JSON.
+- `curl -H 'Host: argocd.g02.cpo2026.it' http://134.112.8.66/` returns HTTP 308
+  after applying the missing Middleware.
+- `curl -k --resolve argocd.g02.cpo2026.it:443:134.112.8.66
+  https://argocd.g02.cpo2026.it/` returns HTTP 200.
+
+**Potential Risks**
+
+- Public DNS is still not updated, so normal users and cert-manager HTTP-01
+  self-checks still hit the old IP until DNS is changed.
+- `vms23` remains NotReady and still has database/platform pods associated with
+  it; CNPG/node recovery requires separate follow-up.
+- Live `letsencrypt-prod` ClusterIssuer metadata differs from the repository
+  file; solver config matches, but account email/private key Secret naming drift
+  should be standardized.
+
+**Confidence**
+
+High for ingress root cause and live route recovery to `134.112.8.66`; medium
+for full platform recovery until DNS is changed and the NotReady node is handled.
+
+---
+
+### 2026-07-13 14:55
+
+**Agent**
+
+Codex
+
+**Task**
+
+Finish the two active resilience configuration tasks and prepare the branch for
+push.
+
+**Files Modified**
+
+- deploy/charts/eurotransit/values.yaml
+- deploy/charts/eurotransit/templates/orders-deployment.yaml
+- deploy/charts/eurotransit/templates/payments-deployment.yaml
+- docs/resilience/runtime-resilience-config.md
+- docs/ingress-incident-report-2026-07-13.md
+- docs/ai-logs.md
+- platform/traefik/values.yaml
+
+**Summary**
+
+Completed the configuration-side work for:
+
+- Configure timeout + retry + backoff + jitter for Orders -> Inventory.
+- Configure bulkhead policy and separate downstream connection-pool settings.
+
+Orders now receives Helm-owned `SPRING_APPLICATION_JSON` containing
+Resilience4j circuit breaker, time limiter, retry, and bulkhead instances for
+`inventory-client` and `payments-client`, plus separate connection-pool
+configuration blocks named `orders-inventory` and `orders-payments`.
+
+Payments now receives `GATEWAY_URL` and Helm-owned `SPRING_APPLICATION_JSON`
+containing the gateway timeout, circuit breaker, bulkhead, and a separate
+connection-pool configuration block named `payments-gateway`.
+
+**Important Boundary**
+
+The current application source still builds Orders clients from a shared
+`WebClient.Builder`, and Payments gateway uses `HttpClient.create()` with only
+`app.gateway.timeout` bound. Therefore this branch completes the GitOps/Helm
+configuration contract, but full separate Reactor Netty pool enforcement still
+requires the application image to bind the new `connection-pool` settings and
+construct named `ConnectionProvider` instances per downstream edge.
+
+**Validation**
+
+Validation was run before push:
+
+- `helm lint deploy/charts/eurotransit`
+- `helm template eurotransit deploy/charts/eurotransit --namespace eurotransit`
+- render inspection for Orders and Payments `SPRING_APPLICATION_JSON`
+
+**Confidence**
+
+High for the configuration repo changes and rendered Helm output. Medium for
+full runtime bulkhead enforcement until the matching application support is
+merged and deployed.

@@ -87,3 +87,13 @@ spec:
 
             - name: PAYMENTS_JWT_AUDIENCE
               value: "{{ .Values.payments.security.jwt.audience }}"
+
+            {{ with .Values.payments.gateway }}
+            - name: GATEWAY_URL
+              value: "{{ .url }}"
+            {{- end }}
+
+            {{ with .Values.payments.springApplicationJson }}
+            - name: SPRING_APPLICATION_JSON
+              value: {{ . | toJson | quote }}
+            {{- end }}

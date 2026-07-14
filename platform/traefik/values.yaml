@@ -20,6 +20,9 @@ service:
     service.beta.kubernetes.io/azure-load-balancer-resource-group: MC_G_06_Lab02cluster_polandcentral
     service.beta.kubernetes.io/azure-pip-name: kubernetes-a18745822eff349198a98b394c413147
 
+# traefik-41.0.2's own chart templates read `log:`/`accessLog:`, not
+# `logs.general`/`logs.access` - the latter is silently ignored by Helm
+# (confirmed by pulling the chart locally and grepping its templates).
 log:
   level: DEBUG
 

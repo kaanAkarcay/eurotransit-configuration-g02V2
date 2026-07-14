@@ -97,6 +97,11 @@ spec:
             - name: INVENTORY_HOST
               value: "{{ .Release.Name }}-inventory"
 
+            {{ with .Values.orders.springApplicationJson }}
+            - name: SPRING_APPLICATION_JSON
+              value: {{ . | toJson | quote }}
+            {{- end }}
+
             - name: KEYCLOAK_ISSUER_URI
               value: "{{ .Values.keycloak.issuerUri }}"
 
