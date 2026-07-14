@@ -11,6 +11,17 @@ frontend:
   # in the application repo) so the pod template hash changes and
   # Kubernetes actually rolls out the new image.
   restartedAt: "unset"
+  # Static nginx, tiny footprint. Set explicitly - an unset resources block
+  # leaves the pod BestEffort, invisible to the scheduler's placement math,
+  # which is exactly what let every app service pile onto one already-full
+  # node instead of spreading out (see docs/ai-logs.md 2026-07-14).
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
   service:
     type: ClusterIP
     port: 80
@@ -27,6 +38,15 @@ catalog:
   # image - "latest" alone never changes the Deployment spec, so nothing
   # would otherwise trigger a restart.
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~320Mi idle) plus headroom, not guessed -
+  # see docs/ai-logs.md 2026-07-14 for the measurement this was based on.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
   service:
     type: ClusterIP
     port: 8080
@@ -37,6 +57,16 @@ orders:
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~320Mi idle) plus headroom - orders gets
+  # slightly more than its siblings since it runs 4 Kafka consumers plus the
+  # outbox poller on top of its own HTTP handler.
+  resources:
+    requests:
+      cpu: 150m
+      memory: 400Mi
+    limits:
+      cpu: 600m
+      memory: 800Mi
   service:
     type: ClusterIP
     port: 8080
@@ -130,6 +160,14 @@ inventory:
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~350Mi idle) plus headroom.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 400Mi
+    limits:
+      cpu: 500m
+      memory: 800Mi
   service:
     type: ClusterIP
     port: 8080
@@ -143,6 +181,14 @@ payments:
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~305Mi idle) plus headroom.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
   service:
     type: ClusterIP
     port: 8080
@@ -207,6 +253,14 @@ notifications:
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~245Mi idle) plus headroom.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 320Mi
+    limits:
+      cpu: 500m
+      memory: 640Mi
   service:
     type: ClusterIP
     port: 8080
