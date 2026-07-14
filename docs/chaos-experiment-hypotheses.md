@@ -44,6 +44,20 @@ These hypotheses are formulated before the experiments are executed. Each will b
 
 ---
 
+## Targeted tuning experiment: Orders -> Inventory network failure
+
+**Failure mode:** Orders pods temporarily cannot send traffic to Inventory pods.
+
+**Chaos Mesh resource:** Suspended `NetworkChaos` Schedule in `platform/chaos-mesh/experiments/orders-inventory-network-failure-schedule.yaml`, partitioning traffic from pods with `app.kubernetes.io/name: orders` to pods with `app.kubernetes.io/name: inventory`.
+
+**Hypothesis:** Once the committed Orders image enforces an Inventory timeout, a controlled network partition causes the `inventory-client` circuit breaker to record failures and open after the configured sample size and failure-rate threshold are reached. This experiment is for threshold tuning only; it must not be used as proof of timeout behavior while the committed Orders source lacks `@TimeLimiter` or an equivalent HTTP client timeout.
+
+**Validation criteria:** `inventory-client` transitions CLOSED -> OPEN under confirmed Inventory unavailability, not-permitted calls appear while OPEN, Orders does not restart, Inventory recovers after the partition, and any threshold change is justified by observed metrics rather than assumed behavior.
+
+Detailed runbook: `docs/resilience/orders-inventory-circuit-breaker-chaos.md`.
+
+---
+
 ## Experiment 3: Node / AZ-style disruption
 
 **Failure mode:** One cluster node is cordoned and drained, simulating an availability zone failure.
