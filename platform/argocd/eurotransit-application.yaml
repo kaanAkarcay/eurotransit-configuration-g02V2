@@ -12,12 +12,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: eurotransit
+  # Argo Rollouts owns only these runtime fields. All other desired state stays
+  # under Argo CD self-healing. The managed-by annotation lets Rollouts restore
+  # Service selectors when a Rollout is removed.
+  ignoreDifferences:
+    - group: ""
+      kind: Service
+      jqPathExpressions:
+        - '.spec.selector."rollouts-pod-template-hash"'
+        - '.metadata.annotations."argo-rollouts.argoproj.io/managed-by-rollouts"'
+    - group: traefik.io
+      kind: TraefikService
+      jqPathExpressions:
+        - .spec.weighted.services[].weight
+    - group: argoproj.io
+      kind: Rollout
+      jqPathExpressions:
+        - '.metadata.annotations."rollout.argoproj.io/workload-generation"'
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+      # Scale the standard Deployment back up and wait for health before a
+      # removed Rollout is pruned and releases its Service selectors.
+      - PruneLast=true
     retry:
       limit: 5
       backoff:

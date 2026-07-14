@@ -1,0 +1,32 @@
+{{- $root := . -}}
+{{- range $serviceName := list "frontend" "catalog" "orders" }}
+{{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" $root "service" $serviceName) | trim -}}
+{{- if eq $strategy "canary" }}
+{{- $canary := index $root.Values.canary $serviceName -}}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "eurotransit.fullname" $root }}-{{ $serviceName }}-canary
+  namespace: {{ $root.Values.namespace }}
+  annotations:
+    # The Rollout at wave -1 first initializes the TraefikService to 100/0.
+    # Only then does wave 0 replace the direct Ingress path with this route.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ $canary.host }}`) && PathPrefix(`{{ $canary.path }}`)
+      kind: Rule
+      priority: {{ ternary 1 100 (eq $serviceName "frontend") }}
+      middlewares:
+        - name: redirect-https
+      services:
+        - name: {{ include "eurotransit.fullname" $root }}-{{ $serviceName }}-canary-route
+          kind: TraefikService
+  tls:
+    secretName: eurotransit-tls
+{{ end }}
+{{ end }}

@@ -1,9 +1,49 @@
 namespace: eurotransit
+
+# Exactly one mode is selected for each service that supports both progressive
+# strategies. The safe default keeps the existing Kubernetes Deployment path.
+deploymentStrategies:
+  frontend: standard
+  catalog: standard
+  orders: standard
+
+progressiveDelivery:
+  # Keep the previous ReplicaSet available for a fast rollback after promotion.
+  scaleDownDelaySeconds: 1800
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 3
+  rollbackWindowRevisions: 2
+
+canary:
+  frontend:
+    host: g02.cpo2026.it
+    path: /
+    initialWeight: 10
+  catalog:
+    host: g02.cpo2026.it
+    path: /api/v1/catalog
+    initialWeight: 10
+  orders:
+    host: g02.cpo2026.it
+    path: /api/v1/orders
+    initialWeight: 10
+
+# Inventory and Payments support Blue/Green only, so a boolean is sufficient.
+# Frontend, Catalog and Orders select Blue/Green through deploymentStrategies.
+blueGreen:
+  inventory:
+    enabled: false
+  payments:
+    enabled: false
+
 frontend:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
     tag: latest
+    # Stable baseline verified from the running Lab02cluster pod on 2026-07-14.
+    # CI replaces this with the registry digest of each tested main build.
+    digest: sha256:f6f574f804a0aca5d5856eb4686700966ef7810175ef1672b08004c4c5d9f21f
     # Always, not IfNotPresent: tag is mutable ("latest"), matching the same
     # reasoning already applied to the 5 backend services.
     pullPolicy: Always
@@ -19,6 +59,9 @@ catalog:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
     tag: latest
+    # Stable baseline verified from the running Lab02cluster pod on 2026-07-14.
+    # CI replaces this with the registry digest of each tested main build.
+    digest: sha256:83bbb96376e6bbd30d4094847f992bfc7feca39e30ea3e748e23bcd8e6a9a7e8
     # Always, not IfNotPresent: tag is mutable now (CI always pushes "latest"),
     # so a cached local image under that name must never be trusted as current.
     pullPolicy: Always
@@ -35,6 +78,9 @@ orders:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
     tag: latest
+    # Stable baseline verified from the running Lab02cluster pod on 2026-07-14.
+    # CI replaces this with the registry digest of each tested main build.
+    digest: sha256:dcb05b71e576a08fbb5470e141441b53a3666fb8d83e9ab3b0dec4e3e24d50ea
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
@@ -115,19 +161,14 @@ orders:
         clientSecret:
           secretName: orders-service-client
           secretKey: client-secret
-canary:
-  orders:
-    enabled: false
-    host: g02.cpo2026.it
-    stableWeight: 90
-    canaryWeight: 10
-    stableServiceName: ""
-    canaryServiceName: eurotransit-orders-canary
 inventory:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
     tag: latest
+    # Stable baseline verified from the running Lab02cluster pod on 2026-07-14.
+    # CI replaces this with the registry digest of each tested main build.
+    digest: sha256:965f2030fe9e0c4c9f2cd4e551e2f8bf973047fa095ca6b55300afe7de9362e8
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
@@ -141,6 +182,9 @@ payments:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payments
     tag: latest
+    # Stable baseline verified from the running Lab02cluster pod on 2026-07-14.
+    # CI replaces this with the registry digest of each tested main build.
+    digest: sha256:83432f3870b4f22cb4759f85a439c407ba0088c526bfc9ce50ed26ef00f499fe
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:

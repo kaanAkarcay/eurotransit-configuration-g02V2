@@ -1,3 +1,4 @@
+{{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" . "service" "catalog") | trim -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,9 +6,13 @@ metadata:
   labels:
     app.kubernetes.io/name: catalog
     app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- if ne $strategy "standard" }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  {{- end }}
 
 spec:
-  replicas: {{ .Values.catalog.replicaCount }}
+  replicas: {{ ternary .Values.catalog.replicaCount 0 (eq $strategy "standard") }}
 
   selector:
     matchLabels:
@@ -33,7 +38,7 @@ spec:
       containers:
         - name: catalog
 
-          image: "{{ .Values.catalog.image.repository }}:{{ .Values.catalog.image.tag }}"
+          image: "{{ include "eurotransit.imageReference" .Values.catalog.image }}"
           imagePullPolicy: {{ .Values.catalog.image.pullPolicy }}
 
           ports:
