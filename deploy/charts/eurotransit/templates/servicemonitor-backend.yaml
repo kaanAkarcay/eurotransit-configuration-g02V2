@@ -1,4 +1,4 @@
-{{- range $svc := list "catalog" "orders" "inventory" "payments" "notifications" }}
+{{- range $svc := list "catalog" "orders" "inventory" "payments" "notifications" "payment-gateway-sim" }}
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
