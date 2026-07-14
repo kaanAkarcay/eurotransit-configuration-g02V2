@@ -71,12 +71,14 @@ orders:
           inventory-client:
             register-health-indicator: true
             sliding-window-size: 10
+            minimum-number-of-calls: 5
             failure-rate-threshold: 50
             wait-duration-in-open-state: 10s
             permitted-number-of-calls-in-half-open-state: 3
           payments-client:
             register-health-indicator: true
             sliding-window-size: 10
+            minimum-number-of-calls: 5
             failure-rate-threshold: 50
             wait-duration-in-open-state: 10s
             permitted-number-of-calls-in-half-open-state: 3
@@ -85,7 +87,7 @@ orders:
           inventory-client:
             timeout-duration: 2s
           payments-client:
-            timeout-duration: 2s
+            timeout-duration: 6s
       retry:
         instances:
           inventory-client:
@@ -146,7 +148,6 @@ payments:
     port: 8080
   gateway:
     url: http://payment-gateway-sim:8080
-    timeout: 5s
   # Rendered into SPRING_APPLICATION_JSON. This keeps the Payments -> gateway
   # circuit-breaker policy in GitOps instead of only in the image defaults.
   springApplicationJson:
@@ -180,6 +181,17 @@ payments:
   security:
     jwt:
       audience: payments
+paymentGatewaySim:
+  replicaCount: 1
+  image:
+    repository: lab02clusterregistry.azurecr.io/eurotransit/payment-gateway-sim
+    tag: latest
+    pullPolicy: Always
+  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  service:
+    type: ClusterIP
+    port: 8080
+  env: []
 notifications:
   replicaCount: 1
   image:

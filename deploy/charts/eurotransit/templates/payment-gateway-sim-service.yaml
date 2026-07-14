@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-gateway-sim
+  labels:
+    app.kubernetes.io/name: payment-gateway-sim
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: {{ .Values.paymentGatewaySim.service.type }}
+  ports:
+    - port: {{ .Values.paymentGatewaySim.service.port }}
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: payment-gateway-sim
+    app.kubernetes.io/instance: {{ .Release.Name }}
