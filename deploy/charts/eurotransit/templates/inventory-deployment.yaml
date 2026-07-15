@@ -11,7 +11,9 @@ metadata:
   {{- end }}
 
 spec:
+{{- if not .Values.inventory.autoscaling.enabled }}
   replicas: {{ ternary 0 .Values.inventory.replicaCount .Values.blueGreen.inventory.enabled }}
+{{- end }}
 
   selector:
     matchLabels:

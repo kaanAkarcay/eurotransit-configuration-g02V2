@@ -206,14 +206,32 @@ inventory:
   # Sized from observed real usage (~350Mi idle) plus headroom.
   resources:
     requests:
-      cpu: 100m
+      cpu: 250m
       memory: 400Mi
     limits:
-      cpu: 500m
+      cpu: "1"
       memory: 800Mi
   service:
     type: ClusterIP
     port: 8080
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - type: Pods
+            value: 1
+            periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Pods
+            value: 1
+            periodSeconds: 120
   security:
     jwt:
       audience: inventory

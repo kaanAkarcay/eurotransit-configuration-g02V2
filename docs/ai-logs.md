@@ -392,6 +392,73 @@ No application code or threshold values were changed.
 
 ---
 
+### 2026-07-14 20:35
+
+**Agent**
+
+Codex
+
+**Task**
+
+Configure HPA for at least one service, using Inventory as the first target.
+
+**Files Modified**
+
+- deploy/charts/eurotransit/values.yaml
+- deploy/charts/eurotransit/templates/inventory-deployment.yaml
+- deploy/charts/eurotransit/templates/inventory-hpa.yaml
+- docs/resilience/inventory-hpa.md
+- docs/ai-logs.md
+
+**Summary**
+
+Added Inventory CPU/memory requests and limits, disabled-by-default Helm
+autoscaling values, and an `autoscaling/v2` HorizontalPodAutoscaler template.
+The Inventory Deployment preserves fixed `replicaCount` behavior when
+autoscaling is disabled, and omits `.spec.replicas` when autoscaling is enabled
+so the HPA owns replica management.
+
+Review follow-up raised the Inventory CPU request from `100m` to `250m`, raised
+the CPU limit from `500m` to `1`, and added an HPA behavior policy so scale-out
+is gradual instead of relying on Kubernetes' default scaling behavior.
+
+Inventory was chosen because it is on the checkout critical path, its
+reservation consistency/idempotency path is better documented than Orders' live
+state, and Metrics Server is available in the live AKS cluster. The
+configuration remains conservative: `minReplicas: 1`, `maxReplicas: 3`, and a
+70% CPU utilization target.
+
+**Validation**
+
+- `helm lint deploy/charts/eurotransit`
+- `helm template eurotransit deploy/charts/eurotransit --namespace eurotransit`
+- `helm template eurotransit deploy/charts/eurotransit --namespace eurotransit --set inventory.autoscaling.enabled=true`
+- YAML parsing of rendered manifests
+- Server-side dry-run against the live API server with Inventory autoscaling
+  disabled and enabled
+
+**Potential Risks**
+
+- Live node memory was already high during the pre-check, so actual scale-out
+  may be capacity-constrained.
+- Live HPA behavior still requires a controlled load test after merge and Argo
+  CD sync.
+- Argo CD currently tracks `main`; merging only to `dev` will not deploy this
+  configuration.
+
+**Confidence**
+
+Medium. The Helm implementation is straightforward, and Metrics Server is
+available, but live autoscaling must still be validated under load and available
+cluster capacity.
+
+**Notes**
+
+Do not mark the DoD HPA item complete until Inventory HPA is observed scaling in
+the live environment without breaking reservation consistency or checkout SLOs.
+
+---
+
 ### 2026-07-14 19:15
 
 **Agent**
