@@ -29,6 +29,7 @@ spec:
     kind: Deployment
     name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
     scaleDown: onsuccess
+  minReadySeconds: {{ $root.Values.progressiveDelivery.minReadySeconds }}
   progressDeadlineSeconds: {{ $root.Values.progressiveDelivery.progressDeadlineSeconds }}
   revisionHistoryLimit: {{ $root.Values.progressiveDelivery.revisionHistoryLimit }}
   rollbackWindow:
@@ -99,6 +100,7 @@ spec:
     kind: Deployment
     name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
     scaleDown: onsuccess
+  minReadySeconds: {{ $root.Values.progressiveDelivery.minReadySeconds }}
   progressDeadlineSeconds: {{ $root.Values.progressiveDelivery.progressDeadlineSeconds }}
   revisionHistoryLimit: {{ $root.Values.progressiveDelivery.revisionHistoryLimit }}
   rollbackWindow:

@@ -320,7 +320,8 @@ eurotransit-application/
 │   ├── Dockerfile
 │   └── nginx.conf
 ├── .github/workflows/
-│   └── ci.yaml
+│   ├── ci.yaml
+│   └── pr.yaml
 ├── docs/
 │   ├── eurotransit-contract.md
 │   ├── capstone-dod.md

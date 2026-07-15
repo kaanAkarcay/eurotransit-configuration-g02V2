@@ -213,6 +213,17 @@ The zero-replica Deployment remains the pod-template source. Argo Rollouts obser
 
 ## Canary operation
 
+Every candidate Pod must remain Ready for
+`progressiveDelivery.minReadySeconds` (20 seconds by default) before Argo
+Rollouts considers it available. This filters out readiness that succeeds only
+briefly during startup.
+
+`progressDeadlineSeconds` marks a Rollout that stops progressing, but this chart
+does not set `progressDeadlineAbort: true`. Exceeding the deadline therefore
+does not promise an automatic rollback. An authorized operator must inspect the
+Rollout, then explicitly promote, retry or abort it. Manual pauses are an
+intentional part of the strategy and are not a metric-based rollback policy.
+
 The configured sequence is:
 
 1. set candidate traffic to `canary.<service>.initialWeight` (default 10%);
@@ -299,6 +310,7 @@ Avoid changing multiple services on the synchronous Orders → Inventory → Pay
 Stable and candidate versions share production dependencies. No separate database or Kafka cluster is created for the demonstration.
 
 - Schema changes follow expand/contract and stay backward compatible through the rollback window.
+- Preview requests use the same production databases and dependencies as the stable workload. Smoke tests must therefore use controlled data and be idempotent, reversible, or read-only where possible.
 - Orders and Inventory stable/candidate instances retain their existing Kafka consumer group, so one group member processes each event and the progressive configuration does not duplicate delivery.
 - HTTP weighting and Blue/Green Services do not route Kafka records. While both ReplicaSets run, Kafka can assign partitions and real events to candidate consumers before HTTP promotion. The candidate must therefore be backward compatible and safe for production events from the moment it starts.
 - A fully inactive Kafka preview would require an application-level consumer lifecycle control that does not currently exist. This chart does not invent a second consumer group or an undocumented environment variable because either could duplicate side effects or diverge from the application contract.

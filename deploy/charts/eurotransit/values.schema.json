@@ -4,6 +4,7 @@
   "definitions": {
     "canaryConfig": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["host", "path", "initialWeight"],
       "properties": {
         "host": { "type": "string", "minLength": 1 },
@@ -13,7 +14,12 @@
     },
     "imageConfig": {
       "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "pullPolicy"],
       "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
         "digest": {
           "type": "string",
           "anyOf": [
@@ -37,15 +43,18 @@
     },
     "blueGreen": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["inventory", "payments"],
       "properties": {
         "inventory": {
           "type": "object",
+          "additionalProperties": false,
           "required": ["enabled"],
           "properties": { "enabled": { "type": "boolean" } }
         },
         "payments": {
           "type": "object",
+          "additionalProperties": false,
           "required": ["enabled"],
           "properties": { "enabled": { "type": "boolean" } }
         }
@@ -53,6 +62,7 @@
     },
     "canary": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["frontend", "catalog", "orders"],
       "properties": {
         "frontend": { "$ref": "#/definitions/canaryConfig" },
@@ -82,10 +92,12 @@
     },
     "progressiveDelivery": {
       "type": "object",
-      "required": ["scaleDownDelaySeconds", "progressDeadlineSeconds", "revisionHistoryLimit", "rollbackWindowRevisions"],
+      "additionalProperties": false,
+      "required": ["scaleDownDelaySeconds", "progressDeadlineSeconds", "minReadySeconds", "revisionHistoryLimit", "rollbackWindowRevisions"],
       "properties": {
         "scaleDownDelaySeconds": { "type": "integer", "minimum": 30 },
         "progressDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "minReadySeconds": { "type": "integer", "minimum": 0 },
         "revisionHistoryLimit": { "type": "integer", "minimum": 2 },
         "rollbackWindowRevisions": { "type": "integer", "minimum": 1 }
       }
