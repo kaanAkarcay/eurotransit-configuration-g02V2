@@ -135,16 +135,29 @@ inventory:
     port: 8080
   resources:
     requests:
-      cpu: 100m
+      cpu: 250m
       memory: 384Mi
     limits:
-      cpu: 500m
+      cpu: "1"
       memory: 768Mi
   autoscaling:
     enabled: false
     minReplicas: 1
     maxReplicas: 3
     targetCPUUtilizationPercentage: 70
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - type: Pods
+            value: 1
+            periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Pods
+            value: 1
+            periodSeconds: 120
   security:
     jwt:
       audience: inventory

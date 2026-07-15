@@ -27,17 +27,19 @@ Inventory now has explicit container resources:
 
 ```yaml
 requests:
-  cpu: 100m
+  cpu: 250m
   memory: 384Mi
 limits:
-  cpu: 500m
+  cpu: "1"
   memory: 768Mi
 ```
 
 The CPU request gives the HPA a denominator for utilization. The memory request
 is intentionally above the observed idle Inventory pod memory usage from the
-2026-07-14 live check, while the CPU request remains small enough for checkout
-load to produce meaningful utilization.
+2026-07-14 live check. The CPU request is deliberately higher than the original
+`100m` draft so short, small CPU spikes do not look like extreme utilization.
+The CPU limit keeps burst headroom available without changing the HPA
+denominator.
 
 Inventory autoscaling is disabled by default:
 
@@ -47,12 +49,28 @@ autoscaling:
   minReplicas: 1
   maxReplicas: 3
   targetCPUUtilizationPercentage: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
 ```
 
 When autoscaling is disabled, the Deployment keeps using
 `inventory.replicaCount`. When autoscaling is enabled, the Deployment omits
 `.spec.replicas` and the `autoscaling/v2` HorizontalPodAutoscaler owns replica
-management.
+management. The behavior policy keeps scale-out gradual, at most one additional
+pod per minute, and makes scale-down more conservative after load subsides. This
+avoids treating brief CPU spikes as a reason to jump immediately to
+`maxReplicas`.
 
 ## Runtime prerequisites
 

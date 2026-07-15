@@ -31,6 +31,10 @@ The Inventory Deployment preserves fixed `replicaCount` behavior when
 autoscaling is disabled, and omits `.spec.replicas` when autoscaling is enabled
 so the HPA owns replica management.
 
+Review follow-up raised the Inventory CPU request from `100m` to `250m`, raised
+the CPU limit from `500m` to `1`, and added an HPA behavior policy so scale-out
+is gradual instead of relying on Kubernetes' default scaling behavior.
+
 Inventory was chosen because it is on the checkout critical path, its
 reservation consistency/idempotency path is better documented than Orders' live
 state, and Metrics Server is available in the live AKS cluster. The
