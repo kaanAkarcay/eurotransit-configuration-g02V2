@@ -1,15 +1,16 @@
 # Purpose: draft Chaos Mesh experiment for tuning the Orders -> Inventory
 # circuit breaker under controlled network failure.
-# Hypothesis: with checkout load running, a temporary network partition from
-# Orders to Inventory causes the `inventory-client` circuit breaker to record
-# failures and open after the configured minimum sample size and failure-rate
-# threshold are met. New affected Stage 1 calls should fail fast while the
-# breaker is OPEN, without causing Orders liveness restart churn.
-# Prerequisite: do not use latency-only results to tune timeout-sensitive
-# thresholds until the committed Orders image actually enforces an Inventory
-# timeout through @TimeLimiter or an HTTP client response timeout. The config
-# repo currently declares `timeout-duration`, but the committed Orders source
-# inspected on 2026-07-14 does not apply @TimeLimiter to InventoryClient.
+# Hypothesis: after the Orders image enforces an Inventory timeout, a temporary
+# network partition from Orders to Inventory causes the `inventory-client`
+# circuit breaker to record failures and open after the configured minimum
+# sample size and failure-rate threshold are met.
+# Prerequisite: do not use this partition experiment to tune thresholds until
+# the committed Orders image actually enforces an Inventory timeout through
+# @TimeLimiter, WebClient responseTimeout, or equivalent. Chaos Mesh partition
+# drops packets; without an application timeout, Orders calls can hang instead
+# of recording fast failures. The config repo currently declares
+# `timeout-duration`, but the committed Orders source inspected on 2026-07-14
+# does not apply @TimeLimiter to InventoryClient.
 # Metrics: resilience4j circuit-breaker state, failed/not-permitted call count,
 # Orders Stage 1 error and latency rate, order terminal-state convergence,
 # Inventory RED metrics, and Orders/Inventory pod restart counters.
@@ -18,7 +19,8 @@
 # NetworkChaos remains for `orders-inventory-network-failure`.
 # Validation steps: verify Chaos Mesh is installed, verify Orders timeout
 # enforcement, generate controlled checkout load, unsuspend for one controlled
-# run, observe metrics/logs, then resuspend and confirm recovery.
+# run, observe metrics/logs, then resuspend and confirm recovery. If timeout
+# enforcement is absent, this manifest is documentation/preparation only.
 apiVersion: chaos-mesh.org/v1alpha1
 kind: Schedule
 metadata:

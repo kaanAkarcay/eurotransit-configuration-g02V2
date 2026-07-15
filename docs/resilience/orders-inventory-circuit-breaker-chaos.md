@@ -2,9 +2,11 @@
 
 Date: 2026-07-14
 
-This note defines the repository-side plan for tuning the Orders -> Inventory
-circuit breaker with Chaos Mesh. It does not claim that the thresholds are tuned
-in the live environment; the experiment has not been run.
+This note defines the repository-side plan for a future Orders -> Inventory
+network-partition experiment with Chaos Mesh. It does not claim that thresholds
+are tuned in the live environment; the experiment has not been run, and the
+current committed Orders image cannot yet produce reliable evidence from this
+partition fault.
 
 ## Prerequisite findings
 
@@ -33,9 +35,11 @@ Therefore `timeout-duration` is configuration-bound but not currently effective
 for the committed Orders Inventory call through Resilience4j annotations. It
 creates a TimeLimiter instance configuration if the application asks for it, but
 it does not by itself wrap a suspend function or enforce a response deadline.
-Latency-only Chaos Mesh experiments must not be used to tune timeout-sensitive
-thresholds until the Orders image enforces an Inventory timeout through
-`@TimeLimiter`, a programmatic TimeLimiter, or an HTTP client response timeout.
+Chaos Mesh `partition` faults must not be used to tune thresholds until the
+Orders image enforces an Inventory timeout through `@TimeLimiter`, a
+programmatic TimeLimiter, or an HTTP client response timeout. A partition drops
+packets instead of returning a fast connection refusal; without a timeout, Orders
+calls can hang rather than record completed failures in the circuit breaker.
 
 ### Resilience4j minimum call default
 
@@ -70,7 +74,9 @@ Application, and the Chaos Mesh namespace/CRDs are not installed. This repo has
 the desired Application manifest, but it is not currently part of the live
 `eurotransit` Application path (`deploy/charts/eurotransit`) and must be
 bootstrapped separately or included in an app-of-apps flow before experiments can
-run.
+run. The experiment manifests under `platform/chaos-mesh/experiments` are also
+outside the current `eurotransit` Application path, so merging this branch does
+not automatically apply them.
 
 ## Repository change
 
@@ -101,11 +107,15 @@ checkout load produces at least `minimum-number-of-calls` for `inventory-client`
 inside the sliding window. If QPS is low, increase controlled load or run a
 longer experiment rather than interpreting a no-open result as a tuned threshold.
 
-The manifest currently uses `mode: all` to prove the hard failure path. That is
-appropriate for an initial binary failure validation. For finer threshold tuning,
-run a follow-up partial-failure experiment, for example with Chaos Mesh
-`fixed-percent` against a subset of Inventory pods, so the observed failure rate
-can calibrate `failure-rate-threshold` more gradually.
+The manifest currently uses `action: partition` and `mode: all`. This is a full
+network blackhole, not a hard connection-refused failure. It is useful for a
+future binary network-isolation validation after timeout enforcement exists. It
+is not useful for current threshold tuning by itself, because the committed
+Orders code can hang on dropped packets instead of producing fast failed calls.
+For finer threshold tuning after the timeout prerequisite is fixed, run a
+follow-up partial-failure experiment, for example with Chaos Mesh `fixed-percent`
+against a subset of Inventory pods, so the observed failure rate can calibrate
+`failure-rate-threshold` more gradually.
 
 The project currently stores its Chaos Mesh experiments as suspended `Schedule`
 resources. If the team standardizes on one-shot manual experiments later, a
@@ -115,6 +125,21 @@ version are confirmed.
 
 No circuit breaker thresholds are changed in this branch. Threshold changes must
 be driven by runtime observations, not guessed from static configuration.
+
+## Blast-radius risk
+
+With the committed Orders code inspected on 2026-07-14, this partition can
+saturate Orders rather than produce a clean circuit-breaker transition:
+
+- no effective Orders -> Inventory timeout is applied;
+- the configured Resilience4j bulkhead is not enforced unless the application
+  wraps the call with `@Bulkhead` or equivalent;
+- the configured `app.inventory.connection-pool` settings are not read by the
+  committed Orders client code.
+
+Therefore this manifest must stay suspended until timeout enforcement is in the
+deployed Orders image. Run it only with controlled load, active monitoring, and a
+clear abort path.
 
 ## Success criteria
 
@@ -150,9 +175,11 @@ errors, and Stage 1 retry/terminal-state behavior.
 
 ## Runtime execution plan
 
-1. Merge this branch to the Argo CD target branch used by the configuration
-   repository.
-2. Install or enable Chaos Mesh:
+1. Treat this branch as repository preparation, not a live tuning result. The
+   current `eurotransit` Argo CD Application tracks `deploy/charts/eurotransit`;
+   it does not apply `platform/chaos-mesh` experiment manifests. Merging to
+   `dev` also does not deploy to the current live Argo CD target (`main`).
+2. Install or enable Chaos Mesh through the platform path:
 
    ```bash
    kubectl apply -f platform/argocd/chaos-mesh-application.yaml
@@ -175,7 +202,9 @@ errors, and Stage 1 retry/terminal-state behavior.
    kubectl -n eurotransit get pods -l app.kubernetes.io/name=inventory,app.kubernetes.io/instance=eurotransit
    ```
 
-5. Verify the Orders runtime prerequisite before unsuspending:
+5. Verify the Orders runtime prerequisite before unsuspending. Do not continue
+   unless the deployed Orders image enforces an Inventory timeout through
+   `@TimeLimiter`, WebClient `responseTimeout`, or equivalent:
 
    ```bash
    kubectl -n eurotransit exec deploy/eurotransit-orders -- printenv SPRING_APPLICATION_JSON
@@ -183,7 +212,7 @@ errors, and Stage 1 retry/terminal-state behavior.
    curl -s http://localhost:18080/actuator/prometheus | grep 'resilience4j_circuitbreaker.*inventory-client'
    ```
 
-   Then confirm from the deployed application revision that Inventory timeout
+   Confirm from the deployed application revision that Inventory timeout
    enforcement is implemented. Do not infer this only from
    `SPRING_APPLICATION_JSON`.
 
@@ -215,10 +244,11 @@ errors, and Stage 1 retry/terminal-state behavior.
 
 Do not modify thresholds until at least one controlled run has evidence.
 
-- If the breaker does not open during confirmed Inventory unavailability and at
-  least 5 calls occurred in the sliding window, lower
-  `failure-rate-threshold` from `50` to `40` or increase load/test duration if
-  the sample was too small.
+- If the breaker does not open during this full partition, do not lower
+  `failure-rate-threshold`. A full partition should produce a 100% failure rate
+  only after calls actually complete as failures. Diagnose timeout enforcement,
+  recorded-call count, Resilience4j annotations/wrapping, metrics labels, and
+  load duration first.
 - If the breaker opens on a very small transient blip and causes unnecessary
   fail-fast behavior, raise `minimum-number-of-calls` from `5` toward `10` before
   changing the failure-rate threshold.
@@ -227,8 +257,8 @@ Do not modify thresholds until at least one controlled run has evidence.
   `5` so half-open has a better sample.
 - If the breaker stays OPEN too long after Inventory recovers, reduce
   `wait-duration-in-open-state` from `10s` to `5s`.
-- If latency, rather than hard failure, is the dominant symptom after timeout
-  enforcement is added, add or tune `slow-call-duration-threshold` and
+- If latency, rather than completed failed calls, is the dominant symptom after
+  timeout enforcement is added, add or tune `slow-call-duration-threshold` and
   `slow-call-rate-threshold` for `inventory-client` based on observed p95/p99
   Inventory call latency.
 - If the full partition only proves the binary failure path, run a partial
@@ -241,8 +271,10 @@ Do not modify thresholds until at least one controlled run has evidence.
 Repository rollback:
 
 - Revert the commit that adds the experiment manifest and this runbook.
-- Argo CD will remove the desired draft manifest if it is part of the reconciled
-  path.
+- Argo CD will remove the desired draft manifest only if it is later added to a
+  reconciled path. With the current repository layout, `platform/chaos-mesh`
+  experiment manifests are applied manually or by a separate platform GitOps
+  flow.
 
 Runtime rollback:
 

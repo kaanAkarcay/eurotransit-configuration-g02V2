@@ -5,6 +5,59 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-14 23:34
+
+**Agent**
+
+Codex
+
+**Task**
+
+Address review feedback on the Orders -> Inventory network-partition chaos
+experiment.
+
+**Files Modified**
+
+- platform/chaos-mesh/experiments/orders-inventory-network-failure-schedule.yaml
+- docs/resilience/orders-inventory-circuit-breaker-chaos.md
+- docs/chaos-experiment-hypotheses.md
+- docs/ai-logs.md
+
+**Summary**
+
+Corrected the experiment documentation to avoid overclaiming what a Chaos Mesh
+`partition` can prove. The runbook now states that network partition is a packet
+blackhole, not a fast hard failure, and that the manifest is blocked until the
+deployed Orders image enforces an Inventory timeout. Added explicit blast-radius
+risk for hanging Orders -> Inventory calls because the committed Orders code does
+not enforce the configured TimeLimiter, bulkhead, or Inventory connection-pool
+settings. Fixed the threshold decision guide so a no-open result under full
+partition is diagnosed as missing timeout/samples/wrapping rather than a reason
+to lower `failure-rate-threshold`.
+
+Also clarified that current Argo CD syncs `deploy/charts/eurotransit`, not the
+`platform/chaos-mesh/experiments` path, so merging this branch does not apply the
+experiment manifest. Moved the targeted experiment out of the numbered
+Experiment 1-5 sequence.
+
+**Potential Risks**
+
+- The manifest remains a future suspended experiment; it still cannot tune
+  thresholds until the application-side timeout prerequisite is implemented.
+- Live Chaos Mesh CRDs are still absent unless the platform application is
+  bootstrapped separately.
+
+**Confidence**
+
+High. The changes are documentation and manifest-comment corrections that align
+the branch with the current Orders implementation evidence and GitOps layout.
+
+**Notes**
+
+No application code or threshold values were changed.
+
+---
+
 ### 2026-07-14 19:15
 
 **Agent**
