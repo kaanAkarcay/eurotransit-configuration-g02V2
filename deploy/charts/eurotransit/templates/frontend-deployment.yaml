@@ -1,3 +1,4 @@
+{{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" . "service" "frontend") | trim -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,8 +6,12 @@ metadata:
   labels:
     app.kubernetes.io/name: frontend
     app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- if ne $strategy "standard" }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  {{- end }}
 spec:
-  replicas: {{ .Values.frontend.replicaCount }}
+  replicas: {{ ternary .Values.frontend.replicaCount 0 (eq $strategy "standard") }}
   selector:
     matchLabels:
       app.kubernetes.io/name: frontend
@@ -25,7 +30,7 @@ spec:
       {{- end }}
       containers:
         - name: frontend
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          image: "{{ include "eurotransit.imageReference" .Values.frontend.image }}"
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - name: http

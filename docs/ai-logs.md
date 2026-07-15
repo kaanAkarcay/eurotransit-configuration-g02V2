@@ -1650,3 +1650,143 @@ argocd.g02.cpo2026.it CNAME g02-entrypoint-2026.polandcentral.cloudapp.azure.com
 
 cert-manager certificates remain pending until public DNS points to the current
 Traefik endpoint.
+
+### 2026-07-14 21:55
+
+**Agent**
+
+Codex (GPT-5)
+
+**Task**
+
+Prepare inactive, per-service Canary and Blue/Green deployment modes using Argo Rollouts while preserving the standard default deployment.
+
+**Files Modified**
+
+- `deploy/charts/eurotransit/values.yaml`
+- `deploy/charts/eurotransit/values.schema.json`
+- `deploy/charts/eurotransit/templates/_helpers.tpl`
+- `deploy/charts/eurotransit/templates/*-deployment.yaml` for Frontend, Catalog, Orders, Inventory and Payments
+- `deploy/charts/eurotransit/templates/ingress.yaml`
+- `deploy/charts/eurotransit/templates/servicemonitor-backend.yaml`
+- `deploy/charts/eurotransit/templates/progressive-rollouts.yaml`
+- `deploy/charts/eurotransit/templates/progressive-services.yaml`
+- `deploy/charts/eurotransit/templates/canary-ingressroutes.yaml`
+- `deploy/charts/eurotransit/templates/canary-traefikservices.yaml`
+- `platform/argocd/argo-rollouts-application.yaml`
+- `platform/argocd/eurotransit-application.yaml`
+- `docs/architecture-design.md`
+- `docs/deployment-strategies.md`
+- `../ai-mistake-log.md` (EuroTransit workspace root)
+- `docs/ai-logs.md`
+
+**Summary**
+
+Added safe `standard|canary|blueGreen` enums for Frontend, Catalog and Orders, Blue/Green booleans for Inventory and Payments, immutable-digest validation, workloadRef-based Rollouts, Traefik weighted routing for public Canary services, internal preview Services for Blue/Green, and ordered Argo CD adoption/removal. All selectors remain at inactive defaults. Notifications and the payment gateway simulator remain standard rolling Deployments.
+
+**Potential Risks**
+
+- Argo Rollouts and its CRDs are not currently installed in the cluster; the pinned platform Application must be deployed before activation.
+- CI still uses mutable image tags and must supply a tested image digest before progressive delivery can render.
+- Prometheus is currently scaled to zero and no validated stable-versus-candidate PromQL contract exists, so promotion remains manual.
+- The first Rollout revision skips strategy steps; the documented stable-pin and baseline-adoption sequence is mandatory.
+
+**Confidence**
+
+High for the inactive Helm configuration and local rendering. Medium for first live activation until the controller installation, Argo CD ownership rules, capacity and rollback procedure have been exercised in the target cluster.
+
+**Notes**
+
+No cluster-changing command was run. Controller/chart facts were verified read-only against Argo Rollouts 1.9.0 / Helm chart 2.41.0 and official documentation.
+
+### 2026-07-14 22:33
+
+**Agent**
+
+Codex (GPT-5)
+
+**Task**
+
+Document the complete standard and progressive production deployment procedure.
+
+**Files Modified**
+
+- `../deployment-instructions.md` (EuroTransit workspace root)
+- `docs/ai-logs.md`
+
+**Summary**
+
+Added an English step-by-step deployment runbook covering the inactive merge,
+one-time Argo Rollouts bootstrap, immutable-digest prerequisite, stable baseline
+pinning, separate strategy adoption, candidate release, Canary and Blue/Green
+operation, promotion, abort, rollback and return to standard deployment.
+
+**Potential Risks**
+
+- The current application CI publishes a mutable `latest` tag and updates
+  `restartedAt`; it does not yet provide the immutable digest required for a
+  progressive release.
+- The inspected application workflow does not build Frontend, so Frontend needs
+  a trusted build-and-digest path before progressive activation.
+- The bootstrap and promotion commands change the cluster and still require
+  explicit human authorization when executed.
+
+**Confidence**
+
+High for consistency with the implemented configuration and deployment-strategy
+documentation. Medium for the first live progressive activation until the
+remaining CI and platform prerequisites are exercised end to end.
+
+**Notes**
+
+No commit, push, merge, Argo CD sync, Helm install/upgrade, or cluster-changing
+command was run while creating the runbook.
+
+### 2026-07-14 22:52
+
+**Agent**
+
+Codex (GPT-5)
+
+**Task**
+
+Complete the pre-merge digest baseline and reduce deployment instructions to
+remaining actions.
+
+**Files Modified**
+
+- `deploy/charts/eurotransit/values.yaml`
+- `docs/architecture-design.md`
+- `docs/deployment-strategies.md`
+- `docs/ai-logs.md`
+- `../choices.md` (EuroTransit workspace root)
+- `../deployment-instructions.md` (EuroTransit workspace root)
+- `../ai-mistake-log.md` (EuroTransit workspace root)
+
+**Summary**
+
+Pinned the verified running Frontend, Catalog, Orders, Inventory and Payments
+digests while every strategy remains Standard. Aligned the CI/CD architecture
+with main-only publishing and automatic digest propagation. Rewrote the root
+deployment runbook so completed CI and baseline preparation are no longer future
+tasks; it now begins with review, merge and platform bootstrap.
+
+**Potential Risks**
+
+- Revalidate a digest if its service is released again before the configuration
+  branch reaches `main`.
+- Argo Rollouts and its CRDs are still absent from the cluster and require the
+  documented authorized bootstrap.
+- The first selector change adopts the stable baseline; a later application
+  `main` build creates the first candidate.
+
+**Confidence**
+
+High for the digest mapping and local Helm rendering. Medium for first live use
+until pull-request CI, platform bootstrap and smoke/rollback checks pass.
+
+**Notes**
+
+The digests were obtained with read-only `kubectl get`. No commit, push, merge,
+image push, Argo CD sync, Helm install/upgrade, or cluster-changing command was
+run.

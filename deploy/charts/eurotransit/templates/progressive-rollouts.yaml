@@ -1,0 +1,121 @@
+{{- $root := . -}}
+{{- $dualServices := list
+      (dict "name" "frontend" "values" .Values.frontend)
+      (dict "name" "catalog" "values" .Values.catalog)
+      (dict "name" "orders" "values" .Values.orders) -}}
+{{- range $service := $dualServices }}
+{{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" $root "service" $service.name) | trim -}}
+{{- if ne $strategy "standard" }}
+{{- include "eurotransit.requireProgressiveDigest" (dict "service" $service.name "image" $service.values.image) -}}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  replicas: {{ $service.values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $service.name }}
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+    scaleDown: onsuccess
+  minReadySeconds: {{ $root.Values.progressiveDelivery.minReadySeconds }}
+  progressDeadlineSeconds: {{ $root.Values.progressiveDelivery.progressDeadlineSeconds }}
+  revisionHistoryLimit: {{ $root.Values.progressiveDelivery.revisionHistoryLimit }}
+  rollbackWindow:
+    revisions: {{ $root.Values.progressiveDelivery.rollbackWindowRevisions }}
+  strategy:
+    {{- if eq $strategy "canary" }}
+    canary:
+      stableService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+      canaryService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-canary
+      maxUnavailable: 0
+      maxSurge: 1
+      minPodsPerReplicaSet: 1
+      scaleDownDelaySeconds: {{ $root.Values.progressiveDelivery.scaleDownDelaySeconds }}
+      stableMetadata:
+        labels:
+          app.kubernetes.io/track: stable
+      canaryMetadata:
+        labels:
+          app.kubernetes.io/track: canary
+      trafficRouting:
+        traefik:
+          weightedTraefikServiceName: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-canary-route
+      steps:
+        - setWeight: {{ (index $root.Values.canary $service.name).initialWeight }}
+        - pause: {}
+        - setWeight: 100
+    {{- else }}
+    blueGreen:
+      activeService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+      previewService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-preview
+      autoPromotionEnabled: false
+      scaleDownDelaySeconds: {{ $root.Values.progressiveDelivery.scaleDownDelaySeconds }}
+      activeMetadata:
+        labels:
+          app.kubernetes.io/track: active
+      previewMetadata:
+        labels:
+          app.kubernetes.io/track: preview
+    {{ end }}
+{{ end }}
+{{ end }}
+
+{{- $blueGreenServices := list
+      (dict "name" "inventory" "enabled" .Values.blueGreen.inventory.enabled "values" .Values.inventory)
+      (dict "name" "payments" "enabled" .Values.blueGreen.payments.enabled "values" .Values.payments) -}}
+{{- range $service := $blueGreenServices }}
+{{- if $service.enabled }}
+{{- include "eurotransit.requireProgressiveDigest" (dict "service" $service.name "image" $service.values.image) -}}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  replicas: {{ $service.values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $service.name }}
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+    scaleDown: onsuccess
+  minReadySeconds: {{ $root.Values.progressiveDelivery.minReadySeconds }}
+  progressDeadlineSeconds: {{ $root.Values.progressiveDelivery.progressDeadlineSeconds }}
+  revisionHistoryLimit: {{ $root.Values.progressiveDelivery.revisionHistoryLimit }}
+  rollbackWindow:
+    revisions: {{ $root.Values.progressiveDelivery.rollbackWindowRevisions }}
+  strategy:
+    blueGreen:
+      activeService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+      previewService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-preview
+      autoPromotionEnabled: false
+      scaleDownDelaySeconds: {{ $root.Values.progressiveDelivery.scaleDownDelaySeconds }}
+      activeMetadata:
+        labels:
+          app.kubernetes.io/track: active
+      previewMetadata:
+        labels:
+          app.kubernetes.io/track: preview
+{{ end }}
+{{ end }}

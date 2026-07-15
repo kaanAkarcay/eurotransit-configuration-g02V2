@@ -5,9 +5,13 @@ metadata:
   labels:
     app.kubernetes.io/name: payments
     app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- if .Values.blueGreen.payments.enabled }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  {{- end }}
 
 spec:
-  replicas: {{ .Values.payments.replicaCount }}
+  replicas: {{ ternary 0 .Values.payments.replicaCount .Values.blueGreen.payments.enabled }}
 
   selector:
     matchLabels:
@@ -30,7 +34,7 @@ spec:
       containers:
         - name: payments
 
-          image: "{{ .Values.payments.image.repository }}:{{ .Values.payments.image.tag }}"
+          image: "{{ include "eurotransit.imageReference" .Values.payments.image }}"
           imagePullPolicy: {{ .Values.payments.image.pullPolicy }}
 
           ports:

@@ -1,15 +1,55 @@
 namespace: eurotransit
+
+# Exactly one mode is selected for each service that supports both progressive
+# strategies. The safe default keeps the existing Kubernetes Deployment path.
+deploymentStrategies:
+  frontend: standard
+  catalog: standard
+  orders: standard
+
+progressiveDelivery:
+  # Keep the previous ReplicaSet available for a fast rollback after promotion.
+  scaleDownDelaySeconds: 1800
+  progressDeadlineSeconds: 600
+  # Require sustained readiness before a candidate is considered available.
+  minReadySeconds: 20
+  revisionHistoryLimit: 3
+  rollbackWindowRevisions: 2
+
+canary:
+  frontend:
+    host: g02.cpo2026.it
+    path: /
+    initialWeight: 10
+  catalog:
+    host: g02.cpo2026.it
+    path: /api/v1/catalog
+    initialWeight: 10
+  orders:
+    host: g02.cpo2026.it
+    path: /api/v1/orders
+    initialWeight: 10
+
+# Inventory and Payments support Blue/Green only, so a boolean is sufficient.
+# Frontend, Catalog and Orders select Blue/Green through deploymentStrategies.
+blueGreen:
+  inventory:
+    enabled: false
+  payments:
+    enabled: false
+
 frontend:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
     tag: latest
-    # Always, not IfNotPresent: tag is mutable ("latest"), matching the same
-    # reasoning already applied to the 5 backend services.
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
-  # Bumped by CI on every push to frontend/** (see .github/workflows/ci.yaml
-  # in the application repo) so the pod template hash changes and
-  # Kubernetes actually rolls out the new image.
+  # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "unset"
   # Static nginx, tiny footprint. Set explicitly - an unset resources block
   # leaves the pod BestEffort, invisible to the scheduler's placement math,
@@ -30,13 +70,13 @@ catalog:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
     tag: latest
-    # Always, not IfNotPresent: tag is mutable now (CI always pushes "latest"),
-    # so a cached local image under that name must never be trusted as current.
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
-  # Bumped by CI on every push to main (see .github/workflows/ci.yaml) so the
-  # pod template hash changes and Kubernetes actually rolls out the new
-  # image - "latest" alone never changes the Deployment spec, so nothing
-  # would otherwise trigger a restart.
+  # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   # Sized from observed real usage (~320Mi idle) plus headroom, not guessed -
   # see docs/ai-logs.md 2026-07-14 for the measurement this was based on.
@@ -55,6 +95,11 @@ orders:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
     tag: latest
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   # Sized from observed real usage (~320Mi idle) plus headroom - orders gets
@@ -145,19 +190,16 @@ orders:
         clientSecret:
           secretName: orders-service-client
           secretKey: client-secret
-canary:
-  orders:
-    enabled: false
-    host: g02.cpo2026.it
-    stableWeight: 90
-    canaryWeight: 10
-    stableServiceName: ""
-    canaryServiceName: eurotransit-orders-canary
 inventory:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
     tag: latest
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   # Sized from observed real usage (~350Mi idle) plus headroom.
@@ -179,6 +221,11 @@ payments:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payments
     tag: latest
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   # Sized from observed real usage (~305Mi idle) plus headroom.

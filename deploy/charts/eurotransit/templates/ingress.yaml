@@ -1,3 +1,7 @@
+{{- $frontendStrategy := include "eurotransit.deploymentStrategy" (dict "root" . "service" "frontend") | trim -}}
+{{- $catalogStrategy := include "eurotransit.deploymentStrategy" (dict "root" . "service" "catalog") | trim -}}
+{{- $ordersStrategy := include "eurotransit.deploymentStrategy" (dict "root" . "service" "orders") | trim -}}
+{{- if or (ne $frontendStrategy "canary") (ne $catalogStrategy "canary") (ne $ordersStrategy "canary") }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -16,7 +20,7 @@ spec:
     - host: g02.cpo2026.it
       http:
         paths:
-          {{- if not .Values.canary.orders.enabled }}
+          {{- if ne $ordersStrategy "canary" }}
           - path: /api/v1/orders
             pathType: Prefix
             backend:
@@ -25,6 +29,7 @@ spec:
                 port:
                   number: 8080
           {{- end }}
+          {{- if ne $catalogStrategy "canary" }}
           - path: /api/v1/catalog
             pathType: Prefix
             backend:
@@ -32,6 +37,8 @@ spec:
                 name: {{ include "eurotransit.fullname" . }}-catalog
                 port:
                   number: 8080
+          {{- end }}
+          {{- if ne $frontendStrategy "canary" }}
           - path: /
             pathType: Prefix
             backend:
@@ -39,3 +46,5 @@ spec:
                 name: {{ include "eurotransit.fullname" . }}-frontend
                 port:
                   number: 80
+          {{- end }}
+{{- end }}

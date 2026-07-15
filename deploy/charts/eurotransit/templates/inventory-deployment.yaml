@@ -5,9 +5,13 @@ metadata:
   labels:
     app.kubernetes.io/name: inventory
     app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- if .Values.blueGreen.inventory.enabled }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  {{- end }}
 
 spec:
-  replicas: {{ .Values.inventory.replicaCount }}
+  replicas: {{ ternary 0 .Values.inventory.replicaCount .Values.blueGreen.inventory.enabled }}
 
   selector:
     matchLabels:
@@ -30,7 +34,7 @@ spec:
       containers:
         - name: inventory
 
-          image: "{{ .Values.inventory.image.repository }}:{{ .Values.inventory.image.tag }}"
+          image: "{{ include "eurotransit.imageReference" .Values.inventory.image }}"
           imagePullPolicy: {{ .Values.inventory.image.pullPolicy }}
 
           ports:
