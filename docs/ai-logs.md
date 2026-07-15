@@ -5,6 +5,61 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-15 18:20
+
+**Agent**
+
+Claude Opus 4.8
+
+**Task**
+
+Config half of the Orders downstream timeout / circuit-breaker fix (companion to
+the application-repo PR). Align GitOps with the code that now enforces the
+timeout, and commit the previously-untracked `docs/ai-mistake-log.md`.
+
+**Files Modified**
+
+- `deploy/charts/eurotransit/values.yaml`
+- `docs/ai-mistake-log.md` (now tracked; new entry + one update)
+- `docs/ai-logs.md`
+
+**Summary**
+
+Under `orders.springApplicationJson.app`, added `inventory.timeout: 2s` and
+`payments.timeout: 6s` — the keys the Orders WebClients now read to set their
+Reactor Netty `responseTimeout`. Removed the `resilience4j.timelimiter` block:
+it was inert (no `@TimeLimiter` wired it) and is superseded by the real
+transport-level timeout. Circuit-breaker instances (with `minimum-number-of-calls:
+5`) are unchanged and still bind by name.
+
+Committed `docs/ai-mistake-log.md`, which had been kept as a working draft: added
+an entry for the inert `@CircuitBreaker` annotation / missing timeout (a breaker
+that could never open), and updated the earlier decline-conflation entry to
+record the client-side fix that just landed.
+
+**Validation**
+
+- `helm lint deploy/charts/eurotransit` — passes.
+- `helm template` renders `"timeout":"2s"` / `"timeout":"6s"` into the Orders
+  `SPRING_APPLICATION_JSON`, and `timelimiter` no longer appears (grep count 0).
+
+**Potential Risks**
+
+- Merge-safe in either order with the app PR: an old Orders image ignores the new
+  `app.*.timeout` keys, and the removed `timelimiter` block was already inert. Argo
+  CD tracks `main`, so nothing deploys until this reaches `main`.
+
+**Confidence**
+
+High. Config mirrors the code change and helm rendering is verified.
+
+**Notes**
+
+`bulkhead`, `retry`, and `connection-pool` blocks are left untouched — also
+currently inert on the code side, but out of scope for this change.
+
+---
+
 ### 2026-07-14 23:34
 
 **Agent**

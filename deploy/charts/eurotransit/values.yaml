@@ -76,12 +76,19 @@ orders:
   springApplicationJson:
     app:
       inventory:
+        # WebClient responseTimeout on the Orders->Inventory call. Enforced by
+        # the client's Netty connector (InventoryClient), which is what lets the
+        # inventory-client circuit breaker record a hung call as a failure.
+        timeout: 2s
         connection-pool:
           name: orders-inventory
           max-connections: 20
           pending-acquire-max-count: 50
           pending-acquire-timeout: 500ms
       payments:
+        # Must exceed Payments' own 5s gateway timeout (payments app.gateway.timeout)
+        # so Orders doesn't abort a call Payments is still working on.
+        timeout: 6s
         connection-pool:
           name: orders-payments
           max-connections: 20
@@ -112,12 +119,6 @@ orders:
             failure-rate-threshold: 50
             wait-duration-in-open-state: 10s
             permitted-number-of-calls-in-half-open-state: 3
-      timelimiter:
-        instances:
-          inventory-client:
-            timeout-duration: 2s
-          payments-client:
-            timeout-duration: 6s
       retry:
         instances:
           inventory-client:
