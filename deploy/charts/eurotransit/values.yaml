@@ -78,15 +78,15 @@ catalog:
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "2026-07-12T17:07:48Z-0d700ea85074077403745c197b085d2342d563ee"
-  # Sized from observed real usage (~320Mi idle) plus headroom, not guessed -
-  # see docs/ai-logs.md 2026-07-14 for the measurement this was based on.
+  # Re-measured 2026-07-15: actual usage steady at ~264Mi, so 384Mi/768Mi left
+  # ~3x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   resources:
     requests:
       cpu: 100m
-      memory: 384Mi
+      memory: 300Mi
     limits:
       cpu: 500m
-      memory: 768Mi
+      memory: 500Mi
   service:
     type: ClusterIP
     port: 8080
@@ -102,16 +102,17 @@ orders:
     digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-15T15:13:03Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
-  # Sized from observed real usage (~320Mi idle) plus headroom - orders gets
-  # slightly more than its siblings since it runs 4 Kafka consumers plus the
-  # outbox poller on top of its own HTTP handler.
+  # Re-measured 2026-07-15: actual usage steady at ~315Mi (highest of the 5,
+  # matches it running 4 Kafka consumers plus the outbox poller on top of its
+  # own HTTP handler). Trimmed from 400Mi/800Mi, kept more headroom than its
+  # siblings for the same reason.
   resources:
     requests:
       cpu: 150m
-      memory: 400Mi
+      memory: 380Mi
     limits:
       cpu: 600m
-      memory: 800Mi
+      memory: 600Mi
   service:
     type: ClusterIP
     port: 8080
@@ -203,14 +204,17 @@ inventory:
     digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-15T15:13:41Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
-  # Sized from observed real usage (~350Mi idle) plus headroom.
+  # Re-measured 2026-07-15: actual usage steady at ~294Mi, so 400Mi/800Mi left
+  # ~2.7x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
+  # CPU untouched - the HPA's targetCPUUtilizationPercentage needs a stable
+  # baseline to compute against.
   resources:
     requests:
       cpu: 250m
-      memory: 400Mi
+      memory: 340Mi
     limits:
       cpu: "1"
-      memory: 800Mi
+      memory: 550Mi
   service:
     type: ClusterIP
     port: 8080
@@ -247,14 +251,15 @@ payments:
     digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-15T15:13:49Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
-  # Sized from observed real usage (~305Mi idle) plus headroom.
+  # Re-measured 2026-07-15: actual usage steady at ~251Mi, so 384Mi/768Mi left
+  # ~3x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   resources:
     requests:
       cpu: 100m
-      memory: 384Mi
+      memory: 300Mi
     limits:
       cpu: 500m
-      memory: 768Mi
+      memory: 480Mi
   service:
     type: ClusterIP
     port: 8080
@@ -319,14 +324,15 @@ notifications:
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-15T15:13:13Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
-  # Sized from observed real usage (~245Mi idle) plus headroom.
+  # Re-measured 2026-07-15: actual usage steady at ~219Mi, so 320Mi/640Mi left
+  # ~2.9x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   resources:
     requests:
       cpu: 100m
-      memory: 320Mi
+      memory: 260Mi
     limits:
       cpu: 500m
-      memory: 640Mi
+      memory: 420Mi
   service:
     type: ClusterIP
     port: 8080
