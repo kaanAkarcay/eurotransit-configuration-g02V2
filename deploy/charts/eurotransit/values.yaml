@@ -65,7 +65,7 @@ inventory:
     repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
     tag: latest
     pullPolicy: Always
-  restartedAt: "2026-07-15T11:59:06Z-cf4430d7b203aa9a232b1a06b7a99e0050237d36"
+  restartedAt: "2026-07-15T15:13:41Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
   service:
     type: ClusterIP
     port: 8080
