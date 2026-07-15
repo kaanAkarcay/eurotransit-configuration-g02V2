@@ -307,6 +307,17 @@ payment-gateway-sim:
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-15T15:13:49Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
+  # No resources declared previously - BestEffort QoS, invisible to the
+  # scheduler's placement math despite steady real usage (~216Mi). Found
+  # during the 2026-07-15 end-to-end memory audit; same root cause as every
+  # other fix this session.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 260Mi
+    limits:
+      cpu: 250m
+      memory: 420Mi
   service:
     type: ClusterIP
     port: 8080

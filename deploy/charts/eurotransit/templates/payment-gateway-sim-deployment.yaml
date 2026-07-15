@@ -37,6 +37,9 @@ spec:
           image: "{{ $gw.image.repository }}:{{ $gw.image.tag }}"
           imagePullPolicy: {{ $gw.image.pullPolicy }}
 
+          resources:
+            {{- toYaml $gw.resources | nindent 12 }}
+
           ports:
             - name: http
               containerPort: 8080

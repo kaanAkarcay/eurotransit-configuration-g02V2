@@ -70,4 +70,15 @@ spec:
       transaction.state.log.replication.factor: 3
       transaction.state.log.min.isr: 2
   entityOperator:
-    topicOperator: {}
+    topicOperator:
+      # No resources declared previously - BestEffort QoS, invisible to the
+      # scheduler's placement math despite steady real usage (~210Mi). Found
+      # during the 2026-07-15 end-to-end memory audit; same root cause as
+      # every other fix this session.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          cpu: 250m
+          memory: 400Mi
