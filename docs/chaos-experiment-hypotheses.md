@@ -103,3 +103,26 @@ These hypotheses are formulated before the experiments are executed. Each will b
 - kubectl: old primary pod restarted as standby
 
 **Validation criteria:** Failover completes within 30 seconds. No committed transactions lost. Checkout recovers without manual intervention. No stuck PENDING orders after recovery.
+
+---
+
+## Additional targeted experiment: Orders -> Inventory network partition
+
+**Failure mode:** Orders pods temporarily cannot send traffic to Inventory pods because packets are dropped by a Chaos Mesh network partition.
+
+**Chaos Mesh resource:** Suspended `NetworkChaos` Schedule in `platform/chaos-mesh/experiments/orders-inventory-network-failure-schedule.yaml`, partitioning traffic from pods with `app.kubernetes.io/name: orders` to pods with `app.kubernetes.io/name: inventory`.
+
+**Hypothesis:** After the committed Orders image enforces an Inventory timeout, a controlled network partition causes the `inventory-client` circuit breaker to record failures and open after the configured sample size and failure-rate threshold are reached. This experiment must not be used as proof of timeout behavior or threshold tuning while the committed Orders source lacks `@TimeLimiter`, WebClient response timeout, or an equivalent timeout.
+
+**Steady state:** Orders, Inventory, Payments, Kafka, and PostgreSQL are healthy. Checkout load is stable and high enough to produce at least `minimum-number-of-calls` for `inventory-client` inside the circuit-breaker sliding window. No active chaos objects exist before the run.
+
+**What we will observe:**
+- Grafana/Prometheus: `inventory-client` call count exceeds `minimum-number-of-calls` during the fault window
+- Grafana/Prometheus: after timeout enforcement exists, `inventory-client` failure rate rises and the circuit breaker transitions CLOSED -> OPEN
+- Grafana/Prometheus: not-permitted calls appear while the breaker is OPEN
+- Kubernetes: Orders and Inventory pod restart counters do not increase from liveness churn
+- Database/business checks: affected orders either reach terminal state or are explicitly accounted for
+
+**Validation criteria:** `inventory-client` transitions CLOSED -> OPEN under confirmed Inventory unavailability only after Orders timeout enforcement exists. If the breaker does not open under a full partition, first diagnose missing timeout, hanging calls, missing samples, or missing Resilience4j wrapping; do not treat that as a reason to lower `failure-rate-threshold`.
+
+Detailed runbook: `docs/resilience/orders-inventory-circuit-breaker-chaos.md`.
