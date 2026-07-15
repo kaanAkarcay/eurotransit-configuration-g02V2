@@ -38,6 +38,9 @@ spec:
               containerPort: 8080
               protocol: TCP
 
+          resources:
+            {{- toYaml .Values.inventory.resources | nindent 12 }}
+
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

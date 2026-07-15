@@ -55,6 +55,122 @@ the branch with the current Orders implementation evidence and GitOps layout.
 **Notes**
 
 No application code or threshold values were changed.
+### 2026-07-14 23:43
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Root-cause the recurring node instability/pod-concentration problem that
+surfaced repeatedly this session (nodes flapping toward 100%+ memory, one
+node repeatedly absorbing most of the app stack, Catalog/Traefik hanging
+under load), then restore previously-paused platform components (see
+2026-07-14 16:26 entry) with chaos-testing readiness in mind.
+
+**Files Modified**
+
+- deploy/charts/eurotransit/values.yaml (added `resources` to 6 services)
+- deploy/charts/eurotransit/templates/{catalog,frontend,inventory,
+  notifications,orders,payments}-deployment.yaml (added `resources:` block
+  referencing the above)
+- platform/traefik/values.yaml (added `resources`)
+- platform/strimzi/kafka-cluster.yaml (broker memory request 256Mi -> 650Mi)
+- docs/ai-logs.md (this entry)
+- (live cluster state - see below, not fully reflected in git yet)
+
+**Summary**
+
+Root cause: all 6 app services, Traefik, the CNPG operator, and every ArgoCD
+component had **no `resources.requests` declared at all** - BestEffort QoS,
+completely invisible to the scheduler's placement math. The scheduler had no
+way to know these pods needed real memory (observed: 246-698Mi each), so it
+kept stacking them onto whichever node looked "empty" on paper, regardless of
+real usage - the actual mechanism behind the whole session's node-instability
+whack-a-mole, not random flakiness.
+
+Fix: measured each service's real memory usage via `kubectl top`, then set
+honest `resources.requests`/`limits` (roughly observed usage + 20-30%
+headroom for requests, ~2x for limits) in the Helm chart for the 6 app
+services and Traefik, applied live via `kubectl set resources` (Helm/ArgoCD
+itself is not currently syncing - see below). Also raised Kafka's broker
+request from 256Mi (deliberately lowered earlier this project during a prior
+capacity crunch) back to 650Mi to match real usage (~630-700Mi/broker);
+required briefly restoring `strimzi-cluster-operator` to reconcile the
+`KafkaNodePool` change, then leaving it running per explicit direction.
+
+Made one real mistake mid-fix: an initial `helm template eurotransit ... |
+kubectl apply -f -` was run without `-n eurotransit` on the apply side, and
+none of these Deployment templates set `metadata.namespace` explicitly -
+this created a full duplicate of every app service (plus `payment-gateway-sim`,
+which isn't even supposed to be live yet - it's on `dev`, not `main`) in the
+`default` namespace. Caught immediately via `kubectl get all -n default`,
+confirmed the real `eurotransit`-namespace resources were untouched, deleted
+the duplicates entirely. Switched to targeted `kubectl set resources` per
+Deployment for the rest of this session to avoid repeating this.
+
+Separately, given this project's chaos-experiment requirements
+(`docs/chaos-experiment-hypotheses.md`), restored several platform components
+that had been scaled to 0 for capacity earlier: CNPG operator (databases had
+zero self-healing without it - the single biggest gap for chaos testing,
+since a chaos-killed DB pod wouldn't recover), the full monitoring stack
+(chaos testing without observability can't measure anything), and most of
+ArgoCD (GitOps self-heal is itself a documented resilience mechanism worth
+being able to test). Found the CNPG operator and every ArgoCD component had
+the exact same zero-request problem as the app services - fixed those too as
+they came back up, using the same measure-then-declare approach.
+
+Hit a real, hard capacity ceiling doing this: with every component now
+honestly declaring its real memory need, the cluster's three nodes are
+genuinely near 100% of allocatable memory in requests-terms (actual live
+usage is lower, ~85-89%, but the scheduler only ever looks at declared
+requests, never live usage). `argocd-application-controller` (320Mi, the
+actual sync engine) and `argocd-notifications-controller` (32Mi) cannot
+schedule anywhere right now and are stuck `Pending`. `keycloak-operator`,
+all of `cert-manager`, and `sealed-secrets-controller` remain at 0 by
+explicit choice, deferred until real headroom exists - restoring them now
+would just create new Pending pods, not actually help anything.
+
+**Current state (verified live, not all reflected in git as a diff beyond
+what's listed above)**:
+- Running with proper resources: CNPG operator, full monitoring stack
+  (Prometheus/Alertmanager/Grafana/kube-state-metrics/prometheus-operator),
+  `strimzi-cluster-operator`, `argocd-dex-server`/`redis`/
+  `applicationset-controller`, all 6 app services, Traefik.
+- Desired=1 but not actually running (Pending, no capacity):
+  `argocd-application-controller`, `argocd-notifications-controller`.
+- `argocd-repo-server`/`argocd-server`: functionally up, but still serving
+  via their pre-resource-patch pod - the replacement pod with real requests
+  is itself stuck Pending until room frees up.
+- Still at 0 by choice: `keycloak-operator`, `cert-manager` (all 3
+  components), `sealed-secrets-controller`.
+
+**Potential Risks**
+
+- The live cluster's Deployment/StatefulSet resource specs (kubectl-applied)
+  and Helm's own release state may now differ until this is properly
+  reconciled through Argo CD/Helm again - same category of drift risk
+  documented in the 2026-07-14 16:26 entry for the Keycloak realm.
+- `argocd-application-controller` being down means Argo CD is not actually
+  reconciling anything right now, on top of already tracking a stale `main`
+  and `dev` being 17 commits ahead unpromoted (see same earlier entry).
+- No headroom exists for `keycloak-operator`/`cert-manager`/
+  `sealed-secrets-controller` - if any of the 5 already-running things below
+  needed a genuine emergency restart while under this ceiling, another
+  Pending situation is likely.
+- The specific request/limit numbers were sized from a single snapshot of
+  observed usage, not sustained load - worth re-validating once the app is
+  handling real traffic instead of ad-hoc test bookings.
+
+**Confidence**
+
+High on the root cause (directly observed: `resources: {}` on every
+affected workload, confirmed via `kubectl get ... -o jsonpath`) and on the
+capacity ceiling being real, not a misconfiguration (confirmed via exact
+allocatable-vs-requested arithmetic per node, not just percentages). Medium
+on the specific number choices - reasonable given observed data, but not
+load-tested.
 
 ---
 

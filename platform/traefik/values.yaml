@@ -28,3 +28,17 @@ log:
 
 accessLog:
   enabled: true
+
+# Was unset entirely (BestEffort QoS) - invisible to the scheduler's
+# placement math, which is exactly what let every service including the
+# ingress itself pile onto one already-full node instead of spreading out
+# (see docs/ai-logs.md 2026-07-14). Sized from observed real usage (~35Mi
+# idle) plus real headroom, since Traefik is the one pod that must stay
+# responsive even under memory pressure elsewhere.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
