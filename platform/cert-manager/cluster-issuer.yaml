@@ -1,0 +1,30 @@
+# Let's Encrypt production issuer, HTTP-01 challenge solved via the Traefik
+# Ingress (matches the "traefik" ingressClassName already used by the
+# eurotransit Ingress). This is what the Ingress's
+# `cert-manager.io/cluster-issuer: letsencrypt-prod` annotation actually
+# needs to exist for the eurotransit-tls Secret to ever get issued.
+#
+# Real, working limitation: HTTP-01 requires Let's Encrypt's servers to
+# reach this cluster over the public internet on port 80 to validate domain
+# ownership. Traefik's own LoadBalancer Service has no external IP yet
+# (separate, still-unresolved Public IP/DNS conflict - see docs/ai-logs.md) -
+# until that's fixed, any Certificate using this issuer will sit in
+# Pending/False, not because of anything wrong here.
+#
+# Applied manually, after cert-manager itself is installed and its CRDs are
+# established:
+#   kubectl apply -f platform/cert-manager/cluster-issuer.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: akarcaykr@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

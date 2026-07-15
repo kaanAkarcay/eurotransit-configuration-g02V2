@@ -1,0 +1,209 @@
+{
+  "title": "EuroTransit - Infrastructure (USE / Golden Signals)",
+  "description": "Utilization, Saturation, Errors per node - the resource-level counterpart to the per-service RED dashboard. Built directly from this session's real incident: nodes silently hitting memory/CPU-credit exhaustion while every workload had zero declared resource requests, invisible to the scheduler.",
+  "schemaVersion": 36,
+  "version": 1,
+  "editable": true,
+  "tags": ["eurotransit", "use", "infrastructure"],
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Utilization — CPU % by node",
+      "description": "USE: Utilization. How busy is each node's CPU?",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Utilization — Memory % by node",
+      "description": "USE: Utilization. This is the metric that mattered most this session - real memory usage vs allocatable.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Utilization — Memory requests vs allocatable, by node",
+      "description": "The OTHER half of the picture: what the scheduler thinks is used (declared requests), which can diverge sharply from actual usage above if workloads don't declare resources.requests - exactly what caused this session's node instability.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * sum by (node) (kube_pod_container_resource_requests{resource=\"memory\"} * on(namespace,pod) group_left() (kube_pod_status_phase{phase=\"Running\"} == 1)) / on(node) group_left() sum by (node) (kube_node_status_allocatable{resource=\"memory\"})",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Saturation — CPU throttling (CFS throttled periods)",
+      "description": "USE: Saturation. Containers being throttled indicates real CPU contention, not just high utilization - directly relevant on burstable/credit-based VM SKUs.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (namespace, pod) (rate(container_cpu_cfs_throttled_periods_total{namespace=\"eurotransit\"}[5m]))",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Saturation — Load average (5m) by node",
+      "description": "USE: Saturation. Work queued waiting for CPU.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "node_load5",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Saturation — Pods Pending (unschedulable)",
+      "description": "USE: Saturation. Directly counts what we hit repeatedly this session: pods that can't be scheduled anywhere.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kube_pod_status_phase{phase=\"Pending\"})",
+          "legendFormat": "pending pods",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Errors — Node Ready condition",
+      "description": "USE: Errors. 1 = Ready, 0 = NotReady. This session's recurring node-flapping symptom, made visible directly instead of discovered via a failed kubectl command.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kube_node_status_condition{condition=\"Ready\", status=\"true\"}",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" }, "min": 0, "max": 1 }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Errors — Node MemoryPressure condition",
+      "description": "USE: Errors. Kubelet's own signal that the node considers itself memory-constrained.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "kube_node_status_condition{condition=\"MemoryPressure\", status=\"true\"}",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" }, "min": 0, "max": 1 }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Errors — OOMKilled containers (last 1h)",
+      "description": "USE: Errors. Direct evidence of under-provisioned memory limits.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (namespace, pod) (kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Errors — Pod container restarts (last 10m), all namespaces",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[10m])) > 0",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Errors — Pods currently unschedulable",
+      "description": "kube_pod_status_scheduled is a gauge (per-condition state), not a counter - this is a point-in-time count of pods stuck with PodScheduled=false right now, the exact 'Insufficient memory/cpu' state this session hit repeatedly. Not the same as Pending count above: a pod can be Pending for other reasons (e.g. image pull) without this condition being false.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kube_pod_status_scheduled{condition=\"false\"})",
+          "legendFormat": "unschedulable now",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } }
+      }
+    }
+  ]
+}

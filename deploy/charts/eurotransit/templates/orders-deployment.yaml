@@ -1,3 +1,4 @@
+{{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" . "service" "orders") | trim -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,9 +6,13 @@ metadata:
   labels:
     app.kubernetes.io/name: orders
     app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- if ne $strategy "standard" }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  {{- end }}
 
 spec:
-  replicas: {{ .Values.orders.replicaCount }}
+  replicas: {{ ternary .Values.orders.replicaCount 0 (eq $strategy "standard") }}
 
   selector:
     matchLabels:
@@ -30,13 +35,16 @@ spec:
       containers:
         - name: orders
 
-          image: "{{ .Values.orders.image.repository }}:{{ .Values.orders.image.tag }}"
+          image: "{{ include "eurotransit.imageReference" .Values.orders.image }}"
           imagePullPolicy: {{ .Values.orders.image.pullPolicy }}
 
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
+
+          resources:
+            {{- toYaml .Values.orders.resources | nindent 12 }}
 
           readinessProbe:
             httpGet:
@@ -96,6 +104,11 @@ spec:
 
             - name: INVENTORY_HOST
               value: "{{ .Release.Name }}-inventory"
+
+            {{ with .Values.orders.springApplicationJson }}
+            - name: SPRING_APPLICATION_JSON
+              value: {{ . | toJson | quote }}
+            {{- end }}
 
             - name: KEYCLOAK_ISSUER_URI
               value: "{{ .Values.keycloak.issuerUri }}"

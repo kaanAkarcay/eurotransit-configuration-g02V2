@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eurotransit-keycloak-auth
+  namespace: eurotransit
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: g02.cpo2026.it
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: eurotransit-keycloak-service
+                port:
+                  name: http

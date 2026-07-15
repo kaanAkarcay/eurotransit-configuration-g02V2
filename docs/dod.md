@@ -17,14 +17,14 @@
 
 ## Pillar B: Consistency under contention
 
-- [ ] Consistency model documented in CAP/PACELC terms (PC/EC: reject writes under partition, strong consistency via primary in normal operation)
-- [ ] Atomic reservation in PostgreSQL: UPDATE seats SET available = available - :qty WHERE available >= :qty
-- [ ] "Never oversell" invariant holds under concurrent requests
+- [x] Consistency model documented in CAP/PACELC terms (PC/EC: reject writes under partition, strong consistency via primary in normal operation) — see `consistency-validation.md` §1
+- [x] Atomic reservation in PostgreSQL: UPDATE seats SET available = available - :qty WHERE available >= :qty
+- [x] "Never oversell" invariant holds under concurrent requests — proven over real HTTP at 10-on-5 and 50-on-20 (`InventoryReserveTest`)
 - [ ] Idempotency level 1 (REST, frontend): processed_requests table in Orders, keyed on the client's idempotency_key
-- [ ] Idempotency level 2 (REST, internal): processed_requests table in Inventory and Payments, keyed on order_id, protecting Orders' bounded retries on POST /reserve and POST /authorize from double-reserving or double-charging
-- [ ] Idempotency level 3 (Kafka): processed_events table in every Kafka consumer (Orders consuming its own order-placed/inventory-reserved/payment-authorized/payment-failed across its four stages, plus Inventory consuming order-failed), keyed on event_id, checked in the same DB transaction as business logic
+- [x] Idempotency level 2 (REST, internal): processed_requests table in Inventory and Payments, keyed on order_id, protecting Orders' bounded retries on POST /reserve and POST /authorize from double-reserving or double-charging
+- [ ] Idempotency level 3 (Kafka): processed_events table in every Kafka consumer (Orders consuming its own order-placed/inventory-reserved/payment-authorized/payment-failed across its four stages, plus Inventory consuming order-failed), keyed on event_id, checked in the same DB transaction as business logic — Inventory's consumer is done and tested. Orders' four stages have the table and the code, but `processedEventRepo.save(...)` writes nothing: `ProcessedEvent` has a non-null `String` `@Id`, so Spring Data R2DBC issues an UPDATE that silently affects 0 rows. `existsById` is therefore always false and the dedup never fires. Blocked on Orders (`consistency-validation.md` §4)
 - [ ] Outbox pattern used for Orders' DB-write-then-Kafka-publish step at every stage transition (Inventory and Payments need no outbox — they never publish to Kafka): event written to Orders' own outbox table in the same transaction as the business write; a polling relay publishes to Kafka and marks rows sent, using SELECT ... FOR UPDATE SKIP LOCKED so multiple replicas never double-publish the same row
-- [ ] Compensation path: order-failed (with reservation_id) triggers Inventory to release reservation
+- [ ] Compensation path: order-failed (with reservation_id) triggers Inventory to release reservation — Inventory's consumer is implemented and tested, but Orders publishes `order-failed` to a bare topic name (no `eurotransit.` prefix) with no `reservation_id` in the payload, so nothing reaches it. Blocked on Orders (`consistency-validation.md` §4)
 - [ ] Demonstrated under chaos: oversell does not occur when messages are duplicated or a pod dies mid-reservation
 
 ## Pillar C: Resilience engineering

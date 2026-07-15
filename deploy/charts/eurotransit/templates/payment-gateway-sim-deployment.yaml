@@ -1,0 +1,83 @@
+{{- /* Values key matches the service/directory name (like every other service)
+     so CI's `yq ."<service>".restartedAt` rollout bump lands on it; the dashed
+     name forces `index` instead of dot access. */}}
+{{- $gw := index .Values "payment-gateway-sim" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-gateway-sim
+  labels:
+    app.kubernetes.io/name: payment-gateway-sim
+    app.kubernetes.io/instance: {{ .Release.Name }}
+
+spec:
+  replicas: {{ $gw.replicaCount }}
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment-gateway-sim
+      app.kubernetes.io/instance: {{ .Release.Name }}
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-gateway-sim
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "{{ $gw.restartedAt }}"
+
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: payment-gateway-sim
+
+          image: "{{ $gw.image.repository }}:{{ $gw.image.tag }}"
+          imagePullPolicy: {{ $gw.image.pullPolicy }}
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 15
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 24
+
+          env:
+            - name: STRIPE_ENABLED
+              value: "{{ $gw.stripe.enabled }}"
+
+            # The app fails fast at startup when Stripe is enabled and the key
+            # is blank, so `optional: true` only matters while
+            # stripe.enabled=false: the pod can start before the secret exists,
+            # without weakening the guard once Stripe is switched on.
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: payment-gateway-sim-stripe
+                  key: stripe-secret-key
+                  optional: true
+
+            - name: STRIPE_PAYMENT_METHOD
+              value: "{{ $gw.stripe.paymentMethod }}"

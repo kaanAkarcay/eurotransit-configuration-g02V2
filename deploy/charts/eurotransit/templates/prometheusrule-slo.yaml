@@ -1,0 +1,142 @@
+# SLI/SLO recording + burn-rate alerting per docs/eurotransit-contract.md §4.
+#
+# All 3 SLOs are implemented. §4.1/§4.3 required adding real Micrometer
+# instrumentation to Orders first (OrderSloMetrics.kt, Stage3Consumer.kt,
+# StalePendingOrdersMonitor.kt) - there was nothing to query before that.
+# See docs/ai-logs.md for that work, including a real, separate bug it
+# surfaced: @EnableScheduling was missing from Orders entirely, silently
+# no-opping every @Scheduled method (including the pre-existing outbox
+# relay poller).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "eurotransit.fullname" . }}-slo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: slo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: eurotransit.slo.recording
+      rules:
+        # SLI for contract §4.2: fraction of POST /api/v1/orders requests
+        # that are non-5xx, over a 5m window - matches the contract's own
+        # SLI formula exactly (rate(non-5xx) / rate(total)).
+        - record: eurotransit:orders_gateway_success_rate:ratio_rate5m
+          expr: |
+            sum(rate(http_server_requests_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", uri="/api/v1/orders", method="POST", status!~"5.."}[5m]))
+            /
+            sum(rate(http_server_requests_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", uri="/api/v1/orders", method="POST"}[5m]))
+
+        # SLI for contract §4.1: fraction of orders reaching CONFIRMED
+        # within 800ms, over a 5m window. Uses the exact 800ms
+        # serviceLevelObjectives() bucket (le="0.8") rather than
+        # histogram_quantile(0.99, ...), so this is a plain ratio - directly
+        # comparable to an error budget the same way §4.2 is, instead of a
+        # percentile point-estimate compared against a threshold.
+        - record: eurotransit:orders_confirmation_latency_slo:ratio_rate5m
+          expr: |
+            sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="0.8"}[5m]))
+            /
+            sum(rate(orders_confirmation_latency_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders"}[5m]))
+
+    - name: eurotransit.slo.burn-rate
+      rules:
+        # Objective is 99.5% success (0.5% error budget). Burn-rate alerting
+        # per contract §4.4: fast burn = 14.4x budget consumption -> page
+        # immediately; slow burn = 3x consumption over 1h -> ticket. This is
+        # the standard Google SRE multi-window burn-rate pattern, using the
+        # exact multipliers and windows the contract specifies (not the
+        # generic 6h/30m pairing from the SRE workbook - following what's
+        # actually documented here).
+        - alert: OrdersGatewaySuccessRateFastBurn
+          expr: |
+            (
+              sum(rate(http_server_requests_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", uri="/api/v1/orders", method="POST", status=~"5.."}[5m]))
+              /
+              sum(rate(http_server_requests_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", uri="/api/v1/orders", method="POST"}[5m]))
+            ) > (14.4 * 0.005)
+          for: 2m
+          labels:
+            severity: critical
+            slo: orders-gateway-success-rate
+            burn: fast
+          annotations:
+            summary: "Orders gateway success rate SLO - fast burn"
+            description: "POST /api/v1/orders error rate is burning the 99.5% success-rate error budget at >14.4x over the last 5m. Contract §4.2/§4.4: page immediately."
+
+        - alert: OrdersGatewaySuccessRateSlowBurn
+          expr: |
+            (
+              sum(rate(http_server_requests_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", uri="/api/v1/orders", method="POST", status=~"5.."}[1h]))
+              /
+              sum(rate(http_server_requests_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", uri="/api/v1/orders", method="POST"}[1h]))
+            ) > (3 * 0.005)
+          for: 15m
+          labels:
+            severity: warning
+            slo: orders-gateway-success-rate
+            burn: slow
+          annotations:
+            summary: "Orders gateway success rate SLO - slow burn"
+            description: "POST /api/v1/orders error rate has been burning the 99.5% success-rate error budget at >3x over the last 1h. Contract §4.2/§4.4: create a ticket."
+
+        # Objective is 99% of orders confirmed within 800ms (1% error
+        # budget). Same fast/slow burn-rate pattern and multipliers as
+        # §4.2, just against the latency-SLI ratio instead of the
+        # success-rate ratio.
+        - alert: OrdersConfirmationLatencyFastBurn
+          expr: |
+            (
+              1 - (
+                sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="0.8"}[5m]))
+                /
+                sum(rate(orders_confirmation_latency_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders"}[5m]))
+              )
+            ) > (14.4 * 0.01)
+          for: 2m
+          labels:
+            severity: critical
+            slo: orders-confirmation-latency
+            burn: fast
+          annotations:
+            summary: "Orders confirmation latency SLO - fast burn"
+            description: "Fewer orders than the 99% budget allows are reaching CONFIRMED within 800ms, burning the error budget at >14.4x over the last 5m. Contract §4.1/§4.4: page immediately."
+
+        - alert: OrdersConfirmationLatencySlowBurn
+          expr: |
+            (
+              1 - (
+                sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="0.8"}[1h]))
+                /
+                sum(rate(orders_confirmation_latency_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders"}[1h]))
+              )
+            ) > (3 * 0.01)
+          for: 15m
+          labels:
+            severity: warning
+            slo: orders-confirmation-latency
+            burn: slow
+          annotations:
+            summary: "Orders confirmation latency SLO - slow burn"
+            description: "Orders reaching CONFIRMED within 800ms has been below the 99% budget, burning the error budget at >3x over the last 1h. Contract §4.1/§4.4: create a ticket."
+
+        # §4.3 is deliberately NOT a burn-rate alert like the two above.
+        # orders_pending_stale_count is a point-in-time gauge (how many
+        # orders are stuck past the 30s budget right now), not an event
+        # counter - there is no rate() to take a ratio of, so a
+        # multiplicative burn-rate doesn't apply the way it does to a
+        # ratio-based SLI. Any order genuinely stuck past budget is already
+        # a real violation happening now, so this alerts directly on
+        # sustained non-zero rather than forcing an artificial ratio.
+        - alert: OrdersPipelineCompletionStalePending
+          expr: |
+            max_over_time(orders_pending_stale_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+            slo: orders-pipeline-completion
+          annotations:
+            summary: "Orders stuck in PENDING past the 30s pipeline-completion budget"
+            description: "At least one order has been PENDING for longer than 30s without reaching a terminal state, sustained for at least 1m. Contract §4.3."

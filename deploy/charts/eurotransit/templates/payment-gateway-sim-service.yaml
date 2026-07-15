@@ -1,0 +1,21 @@
+{{- $gw := index .Values "payment-gateway-sim" }}
+apiVersion: v1
+kind: Service
+metadata:
+  # Deliberately not the fullname helper: Payments reaches the gateway via
+  # `payments.gateway.url = http://payment-gateway-sim:8080`, so the DNS name
+  # must be the bare one — `eurotransit-payment-gateway-sim` would not resolve.
+  name: payment-gateway-sim
+  labels:
+    app.kubernetes.io/name: payment-gateway-sim
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: {{ $gw.service.type }}
+  ports:
+    - port: {{ $gw.service.port }}
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: payment-gateway-sim
+    app.kubernetes.io/instance: {{ .Release.Name }}

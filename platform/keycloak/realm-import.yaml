@@ -29,6 +29,19 @@ metadata:
   namespace: eurotransit
 spec:
   keycloakCRName: eurotransit-keycloak
+  # The Operator's own doc says this is "inherited from the Keycloak CR" if
+  # unset, but in practice the one-off import Job still requested the
+  # Operator's hardcoded 1700Mi default regardless - too large for this
+  # cluster's ~1Gi/node of actually-free memory (regional vCPU/resource
+  # quota is already tight, see docs/ai-logs.md). Set explicitly instead of
+  # relying on inheritance.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   realm:
     realm: eurotransit
     enabled: true

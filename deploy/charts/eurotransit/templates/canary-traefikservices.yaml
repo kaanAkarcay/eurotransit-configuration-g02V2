@@ -1,0 +1,25 @@
+{{- $root := . -}}
+{{- $services := list
+      (dict "name" "frontend" "port" .Values.frontend.service.port)
+      (dict "name" "catalog" "port" .Values.catalog.service.port)
+      (dict "name" "orders" "port" .Values.orders.service.port) -}}
+{{- range $service := $services }}
+{{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" $root "service" $service.name) | trim -}}
+{{- if eq $strategy "canary" }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: TraefikService
+metadata:
+  name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-canary-route
+  namespace: {{ $root.Values.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  weighted:
+    services:
+      - name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+        port: {{ $service.port }}
+      - name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-canary
+        port: {{ $service.port }}
+{{ end }}
+{{ end }}
