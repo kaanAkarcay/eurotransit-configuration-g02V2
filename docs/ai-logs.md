@@ -5,6 +5,165 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-15 15:34
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Complete the SLI/burn-rate work left open in the previous entry: §4.1
+(latency to CONFIRMED) and §4.3 (pipeline completion within 30s), now that
+the application repo has added the Micrometer instrumentation they need
+(see that repo's `ai-logs.md`).
+
+**Files Modified**
+
+- deploy/charts/eurotransit/templates/prometheusrule-slo.yaml
+
+**Summary**
+
+Added the §4.1 SLI as a recording rule
+(`eurotransit:orders_confirmation_latency_slo:ratio_rate5m`) - a plain
+ratio using the new `orders_confirmation_latency_seconds_bucket{le="0.8"}`
+exact-SLO bucket, deliberately not `histogram_quantile(0.99, ...)`, so it's
+comparable to an error budget the same way §4.2 already is. Added matching
+fast/slow burn-rate alerts using the contract's same 14.4x/3x multipliers,
+just against a 1% error budget instead of §4.2's 0.5%.
+
+§4.3 is handled differently on purpose: `orders_pending_stale_count` is a
+point-in-time gauge (how many orders are stuck past budget right now), not
+an event counter, so there's no `rate()` to build a ratio-based burn-rate
+from the way §4.1/§4.2 use one. Implemented as a direct sustained-non-zero
+alert instead of forcing an artificial ratio - documented inline why this
+one alert deliberately doesn't match the other two's shape.
+
+Verified live: all 7 rules (2 recording + 5 alerts) load with `health: ok`
+via Prometheus's rules API. The latency ratio currently evaluates to `NaN`
+(0 confirmed orders exist yet, 0/0) - checked this doesn't cause a false
+alert: Prometheus's `NaN > threshold` always evaluates `false`, so the new
+alerts correctly stay inactive rather than firing spuriously on missing
+data.
+
+Deploying the app repo's fix for this surfaced a genuinely confusing
+incident worth recording here too: a Docker rebuild produced a byte-for-
+byte identical image digest to a build from *before* the source edit,
+despite `--no-cache`. Not a false alarm - extracting and inspecting the
+compiled class confirmed the new code was actually missing. Resolved by
+fully flushing local Docker images/build cache and rebuilding from a clean
+slate, verifying the compiled class *before* pushing this time rather than
+trusting the digest or the exit code. Root cause not conclusively
+identified.
+
+**Potential Risks**
+
+- Same as the app repo's entry: real burn-rate behavior under genuine error
+  traffic hasn't been observed, since the saga can't yet complete a real
+  order (blocked by already-documented, separate bugs). Rules are verified
+  correct and safe (no false positives on missing data), not battle-tested.
+- All 3 SLOs from the contract are now implemented, closing out the task
+  set from the 2026-07-15 02:05 entry.
+
+**Confidence**
+
+High - every claim here was checked against live Prometheus state, not
+assumed from the YAML alone.
+
+---
+
+### 2026-07-15 02:05
+
+**Agent**
+
+Claude Sonnet 5 via Claude Code
+
+**Task**
+
+Four assigned observability tasks: RED dashboard per service, Infrastructure
+(USE/Golden Signals) dashboard, PromQL SLI queries for the contract's 3
+SLOs, burn-rate alerts in a PrometheusRule.
+
+**Files Modified**
+
+- platform/observability/dashboards/eurotransit-red-signals.json (new)
+- platform/observability/dashboards/eurotransit-infrastructure-use.json (new)
+- platform/observability/grafana-dashboard-imports.md
+- deploy/charts/eurotransit/templates/prometheusrule-slo.yaml (new)
+- docs/ai-logs.md (this entry)
+
+**Summary**
+
+Before building anything, checked whether the contract's 3 SLOs (§4) are
+actually measurable: grepped `backend/orders` for any Micrometer
+instrumentation and found none at all. §4.2 (Gateway success rate) is
+directly computable from Spring's auto-provided HTTP metrics; §4.1 (latency
+to CONFIRMED) and §4.3 (pipeline completion within 30s) both need custom
+`Timer`/`Gauge` instrumentation that doesn't exist yet - writing PromQL
+against non-existent metrics would be fabricating queries, so only §4.2 was
+implemented; §4.1/§4.3 are explicitly deferred pending that instrumentation
+(and per the mistake-log, moot anyway until the saga's topic/payload bugs
+are fixed - orders never reaches CONFIRMED in practice right now).
+
+Built `prometheusrule-slo.yaml`: a recording rule for the §4.2 SLI
+(non-5xx ratio on `POST /api/v1/orders`, exact contract formula) plus two
+burn-rate alerts using the contract's own §4.4 multipliers verbatim (14.4x
+over 5m -> page; 3x over 1h -> ticket) rather than the generic Google SRE
+6h/30m recipe. Verified live: applied to the cluster, confirmed via
+Prometheus's own rules API that all 3 load with `health: ok`, and confirmed
+the underlying metric populates correctly (a real `POST /api/v1/orders`
+401 - rejected pre-routing by Spring Security, tagged `uri="UNKNOWN"`,
+correctly irrelevant to the SLI since 401 isn't 5xx either way).
+
+Built two new Grafana dashboards from scratch, properly scoped to the
+`eurotransit` namespace (the one existing dashboard,
+`lab05-application-red-signals.json`, is leftover from an unrelated earlier
+lab - hardcoded to namespace `lab05-app`, aggregate-only, left in place but
+noted as stale). RED dashboard: per-service overview row plus a `$service`
+variable for drill-down. Infrastructure/USE dashboard: built directly around
+this session's own real incident rather than a generic template - panels
+for declared-requests-vs-allocatable per node (the exact metric mismatch
+behind the session's node instability), CPU throttling, node Ready/
+MemoryPressure conditions, OOMKills, and currently-unschedulable pod count.
+
+Verified every single panel's query against live Prometheus data, not just
+JSON validity - this caught two real, distinct bugs: (1) `orders` and
+`notifications` were both 404ing on `/actuator/prometheus` due to a missing
+Micrometer dependency (fixed in the app repo, see its own `ai-logs.md`);
+(2) the Infrastructure dashboard's "unschedulable" panel originally used
+`increase()` on `kube_pod_status_scheduled`, which Prometheus itself flagged
+as semantically invalid - that metric is a per-condition gauge, not a
+counter. Fixed to a plain instant-value sum. The requests-vs-allocatable
+panel's result (99.0/99.9/99.7% per node) matched the exact numbers manually
+computed via `kubectl describe nodes` earlier the same session - strong
+independent confirmation the query is correct.
+
+Both dashboards imported into the live Grafana via its API (port-forwarded
+for the session, cleaned up afterward) and confirmed rendering, not just
+committed as JSON nobody's looked at.
+
+**Potential Risks**
+
+- §4.1/§4.3 SLOs remain unimplemented pending Orders instrumentation - a
+  real gap, not an oversight, tracked here and in the mistake-log's existing
+  entries about the saga's broken topics/payloads.
+- The new dashboards are imported live but not wired into any auto-
+  provisioning (this project doesn't have a dashboard sidecar configured -
+  same manual-import pattern as the existing community dashboard). They'll
+  need re-importing if Grafana's PVC/state is ever lost.
+- Burn-rate alert thresholds are correct per the contract's stated
+  multipliers, but haven't fired in practice yet (no sustained error
+  traffic existed to test against) - logic verified, not battle-tested.
+
+**Confidence**
+
+High on what's implemented (every query independently verified against
+live data, two real bugs caught and fixed in the process, not just written
+and assumed correct). Explicit about what's NOT implemented (§4.1/§4.3)
+rather than papering over the gap.
+
+---
+
 ### 2026-07-14 23:43
 
 **Agent**
