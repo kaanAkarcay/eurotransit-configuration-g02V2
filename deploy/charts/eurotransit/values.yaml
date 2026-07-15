@@ -77,7 +77,7 @@ catalog:
     digest: ""
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
-  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  restartedAt: "2026-07-12T17:07:48Z-0d700ea85074077403745c197b085d2342d563ee"
   # Sized from observed real usage (~320Mi idle) plus headroom, not guessed -
   # see docs/ai-logs.md 2026-07-14 for the measurement this was based on.
   resources:
@@ -101,7 +101,7 @@ orders:
     # populate it only at that point, not as a standing default.
     digest: ""
     pullPolicy: Always
-  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  restartedAt: "2026-07-15T15:13:03Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
   # Sized from observed real usage (~320Mi idle) plus headroom - orders gets
   # slightly more than its siblings since it runs 4 Kafka consumers plus the
   # outbox poller on top of its own HTTP handler.
@@ -202,7 +202,7 @@ inventory:
     # populate it only at that point, not as a standing default.
     digest: ""
     pullPolicy: Always
-  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  restartedAt: "2026-07-15T15:13:41Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
   # Sized from observed real usage (~350Mi idle) plus headroom.
   resources:
     requests:
@@ -228,7 +228,7 @@ payments:
     # populate it only at that point, not as a standing default.
     digest: ""
     pullPolicy: Always
-  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  restartedAt: "2026-07-15T15:13:49Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
   # Sized from observed real usage (~305Mi idle) plus headroom.
   resources:
     requests:
@@ -283,7 +283,7 @@ payment-gateway-sim:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payment-gateway-sim
     tag: latest
     pullPolicy: Always
-  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  restartedAt: "2026-07-15T15:13:49Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
   service:
     type: ClusterIP
     port: 8080
@@ -300,7 +300,7 @@ notifications:
     repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
     tag: latest
     pullPolicy: Always
-  restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  restartedAt: "2026-07-15T15:13:13Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
   # Sized from observed real usage (~245Mi idle) plus headroom.
   resources:
     requests:
