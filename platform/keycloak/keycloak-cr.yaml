@@ -46,9 +46,20 @@ spec:
       name: keycloak-db-app
       key: password
   hostname:
-    hostname: g02.cpo2026.it
+    # Explicit https scheme: Traefik terminates TLS and forwards to Keycloak
+    # over plain HTTP internally, so without a scheme here Keycloak infers the
+    # request's own (http) scheme and mints tokens with iss: http://... while
+    # every resource server validates against the public iss: https://... -
+    # every token gets rejected as invalid_token. Confirmed live via the
+    # realm's discovery document showing issuer: http://g02.cpo2026.it/... .
+    hostname: https://g02.cpo2026.it
   http:
     httpEnabled: true
+  # xforwarded matches Traefik's default X-Forwarded-* headers (not the RFC
+  # 7239 Forwarded header). Without this, Keycloak has no reason to trust the
+  # scheme/host Traefik forwarded and falls back to what it saw directly.
+  proxy:
+    headers: xforwarded
   ingress:
     enabled: false
     className: traefik

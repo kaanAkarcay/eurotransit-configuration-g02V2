@@ -186,7 +186,13 @@ orders:
       audience: orders
     serviceToken:
       inventory:
-        enabled: false
+        # One orders-service token for all outbound sync calls (Inventory +
+        # Payments) - see PaymentClient.kt/InventoryClient.kt, both gated by
+        # this same toggle. Enabling this (plus the SERVICE_TOKEN_ENABLED env
+        # var rename and the payments-audience realm scope) is what actually
+        # fixes the Orders -> Payments 401.
+        enabled: true
+        clientId: orders-service
         # Must match the confidential client secret configured in Keycloak.
         # Store the real value as a Kubernetes Secret/SealedSecret, not here.
         clientSecret:

@@ -5,6 +5,141 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-16 00:03
+
+**Agent**
+
+Claude Sonnet 5
+
+**Task**
+
+Fix the Orders→Payments 401 (checkout blocked end-to-end), per a teammate's
+handoff doc. Verified each claim live before applying.
+
+**Files Modified**
+
+- `platform/keycloak/keycloak-cr.yaml`
+- `platform/keycloak/realm-import.yaml`
+- `deploy/charts/eurotransit/values.yaml`
+- `deploy/charts/eurotransit/templates/orders-deployment.yaml`
+
+**Summary**
+
+Confirmed live the realm's issuer was `http://...` (Traefik→Keycloak forwards
+over plain HTTP, no `hostname`/`proxy` config to correct it) while backends
+validate `https://...` - every token rejected. Fixed: `hostname:
+https://g02.cpo2026.it` + `proxy.headers: xforwarded`. Added a `payments`
+client and `payments-audience` scope to the realm, attached to
+`orders-service` (mirrors the existing `inventory-audience` pattern). Renamed
+the env var `INVENTORY_SERVICE_TOKEN_ENABLED` → `SERVICE_TOKEN_ENABLED` (the
+old name never matched the Spring property it was meant to set, so the toggle
+was silently always false), set it to `true`, and added the missing
+`clientId: orders-service` (previously undefined, rendered as `""`).
+
+Not yet applied: the Keycloak CR/realm changes aren't ArgoCD-tracked (manual
+`kubectl apply`); the chart changes need to reach `main` first.
+
+**Validation**
+
+`helm lint`/`helm template` confirm the chart renders correctly with the
+service-token env vars now populated. YAML validity and realm structure
+checked directly. Live issuer mismatch confirmed via the realm's actual
+discovery endpoint before assuming it was the cause.
+
+**Potential Risks**
+
+- Deferred: renaming `payment-gateway-sim`'s Service/Deployment to the
+  `eurotransit.fullname` helper (currently the one service without the
+  `eurotransit-` prefix) - not broken today, held off as a live-rename with
+  more blast radius than these three fixes.
+- All three fixes are interdependent - applying only some of them (e.g.
+  issuer fixed but service token still disabled) leaves Orders→Payments
+  failing a different way.
+
+**Confidence**
+
+High - root cause confirmed live (actual issuer claim fetched from the realm),
+not assumed from the handoff doc alone.
+
+---
+
+### 2026-07-15 20:29
+
+**Agent**
+
+Claude Sonnet 5
+
+**Task**
+
+End-to-end cluster memory audit and reduction, following up on a request to
+"balance itself better" after repeated node-instability incidents this session.
+
+**Files Modified**
+
+- `platform/cnpg/{catalog,inventory,keycloak,orders,payments}-db-cluster.yaml`
+- `platform/keycloak/keycloak-cr.yaml`
+- `platform/strimzi/kafka-cluster.yaml`
+- `deploy/charts/eurotransit/values.yaml`
+- `deploy/charts/eurotransit/templates/payment-gateway-sim-deployment.yaml`
+
+**Summary**
+
+Re-measured real usage against declared requests/limits cluster-wide and found
+several components 2.5-4x oversized relative to actual consumption, plus two
+pods (Kafka's `entity-operator`, `payment-gateway-sim`) running fully
+BestEffort with no resources declared at all - the same root-cause pattern
+behind this session's earlier node instability. Fixes:
+
+- Trimmed the 5 CNPG Postgres clusters from 256Mi/512Mi to ~150-180Mi/300-350Mi
+  each (actual usage was 55-111Mi).
+- Switched Keycloak's `KC_CACHE` from `ispn` to `local` - it runs a single
+  replica but was paying full Infinispan/JGroups clustering overhead for
+  nothing to cluster with. Cut its real usage from ~612Mi to ~372Mi.
+- Trimmed the 5 app-service Deployments (catalog/orders/inventory/payments/
+  notifications) to roughly 1.9x actual usage instead of 2.5-3x.
+- Added missing `resources` blocks to Kafka's `entity-operator` and
+  `payment-gateway-sim` (both previously BestEffort despite ~210-216Mi real
+  usage) - cluster now has zero BestEffort pods.
+- Put Grafana and the idle Strimzi/Keycloak/CNPG operators on an on-demand
+  scale-to-0 pattern, bumping to 1 only when reconciling a CR change.
+
+Also reviewed PR #24 (Argo Rollouts canary/blue-green support) before it
+merged: found and fixed a blocking bug where default `image.digest` values in
+`values.yaml` would have silently pinned `standard`-mode services away from
+`:latest`, breaking the existing CI/restartedAt rollout flow; then fixed the
+PR's own CI test matrix, which had been relying on those same defaults to
+satisfy the `requireProgressiveDigest` guard.
+
+**Validation**
+
+All changes applied live and verified via `kubectl top`/QoS class before and
+after; Helm changes verified via `helm lint`/`helm template` across the
+standard render and all canary/blueGreen scenarios prior to push. ArgoCD
+`Synced`/`Healthy` at each step.
+
+**Potential Risks**
+
+- Freeing memory doesn't create idle headroom in a system with pent-up
+  scheduling demand: the first ~1.4Gi freed was immediately consumed by three
+  previously-Pending pods (3rd Kafka broker, argocd-application-controller, a
+  teammate's stale inventory rollout) finally scheduling - a good outcome, but
+  worth knowing before expecting visible breathing room from a similar pass.
+- Kafka broker memory (650Mi request) was deliberately left untouched:
+  actual usage already tracks it closely (~102-106%), and shrinking JVM heap
+  further risks GC-pause-induced ISR shrinkage under the load this project's
+  chaos experiments are meant to exercise - not worth ~100-150Mi.
+- `cert-manager` remains at 0 replicas; the live TLS cert is valid until
+  2026-10-11, but will need cert-manager restored before its renewal window
+  (~day 60) if the cluster is still running that late.
+
+**Confidence**
+
+High - every number above was measured live (`kubectl top`, QoS class, node
+`describe`), not estimated, and every change was verified synced/healthy
+before moving to the next.
+
+---
+
 ### 2026-07-15 18:20
 
 **Agent**

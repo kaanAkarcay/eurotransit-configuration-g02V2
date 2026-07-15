@@ -70,6 +70,18 @@ spec:
               included.client.audience: inventory
               access.token.claim: "true"
               id.token.claim: "false"
+      - name: payments-audience
+        protocol: openid-connect
+        description: Adds the Payments API audience to Orders service-account tokens.
+        protocolMappers:
+          - name: payments-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: payments
+              access.token.claim: "true"
+              id.token.claim: "false"
     clients:
       - clientId: frontend
         publicClient: true
@@ -101,6 +113,12 @@ spec:
         standardFlowEnabled: false
         directAccessGrantsEnabled: false
         serviceAccountsEnabled: false
+      - clientId: payments
+        protocol: openid-connect
+        publicClient: false
+        standardFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
       - clientId: orders-service
         protocol: openid-connect
         publicClient: false
@@ -114,6 +132,7 @@ spec:
           - roles
           - email
           - inventory-audience
+          - payments-audience
     users:
       - username: testuser
         enabled: true
