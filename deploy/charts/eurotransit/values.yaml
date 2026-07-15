@@ -36,7 +36,7 @@ orders:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
     tag: latest
     pullPolicy: Always
-  restartedAt: "2026-07-12T17:08:11Z-0d700ea85074077403745c197b085d2342d563ee"
+  restartedAt: "2026-07-15T15:13:03Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
   service:
     type: ClusterIP
     port: 8080
