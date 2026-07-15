@@ -43,8 +43,11 @@ frontend:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
     tag: latest
-    # Immutable release identity; recheck the stable digest before activation.
-    digest: sha256:f6f574f804a0aca5d5856eb4686700966ef7810175ef1672b08004c4c5d9f21f
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "unset"
@@ -56,8 +59,11 @@ catalog:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
     tag: latest
-    # Immutable release identity; recheck the stable digest before activation.
-    digest: sha256:83bbb96376e6bbd30d4094847f992bfc7feca39e30ea3e748e23bcd8e6a9a7e8
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
@@ -69,8 +75,11 @@ orders:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
     tag: latest
-    # Immutable release identity; recheck the stable digest before activation.
-    digest: sha256:0904cd56829be0209205bd3910d0eacd08beb081a7017718db6279e2697fc551
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
@@ -156,8 +165,11 @@ inventory:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
     tag: latest
-    # Immutable release identity; recheck the stable digest before activation.
-    digest: sha256:965f2030fe9e0c4c9f2cd4e551e2f8bf973047fa095ca6b55300afe7de9362e8
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
@@ -171,8 +183,11 @@ payments:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payments
     tag: latest
-    # Immutable release identity; recheck the stable digest before activation.
-    digest: sha256:83432f3870b4f22cb4759f85a439c407ba0088c526bfc9ce50ed26ef00f499fe
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
   service:
