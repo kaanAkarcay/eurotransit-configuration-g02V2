@@ -1,0 +1,82 @@
+{{- $root := . -}}
+{{- $dualServices := list
+      (dict "name" "frontend" "port" .Values.frontend.service.port "targetPort" 80)
+      (dict "name" "catalog" "port" .Values.catalog.service.port "targetPort" 8080)
+      (dict "name" "orders" "port" .Values.orders.service.port "targetPort" 8080) -}}
+{{- range $service := $dualServices }}
+{{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" $root "service" $service.name) | trim -}}
+{{- if eq $strategy "canary" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-canary
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $service.port }}
+      targetPort: {{ $service.targetPort }}
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- else if eq $strategy "blueGreen" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-preview
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $service.port }}
+      targetPort: {{ $service.targetPort }}
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{ end }}
+{{ end }}
+
+{{- $blueGreenServices := list
+      (dict "name" "inventory" "enabled" .Values.blueGreen.inventory.enabled "port" .Values.inventory.service.port "targetPort" 8080)
+      (dict "name" "payments" "enabled" .Values.blueGreen.payments.enabled "port" .Values.payments.service.port "targetPort" 8080) -}}
+{{- range $service := $blueGreenServices }}
+{{- if $service.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-preview
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $service.port }}
+      targetPort: {{ $service.targetPort }}
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ $service.name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{ end }}
+{{ end }}

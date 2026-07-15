@@ -28,10 +28,10 @@ Inventory now has explicit container resources:
 ```yaml
 requests:
   cpu: 250m
-  memory: 384Mi
+  memory: 400Mi
 limits:
   cpu: "1"
-  memory: 768Mi
+  memory: 800Mi
 ```
 
 The CPU request gives the HPA a denominator for utilization. The memory request

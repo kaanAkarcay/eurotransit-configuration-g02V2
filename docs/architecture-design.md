@@ -28,6 +28,7 @@
                           │                                                          │
                           │  Platform:                                               │
                           │       Argo CD         ──  GitOps delivery                 │
+                          │       Argo Rollouts   ──  Canary / Blue-Green control     │
                           │       Prometheus      ──  metrics + alerts                │
                           │       Grafana         ──  dashboards                      │
                           │       Chaos Mesh      ──  fault injection                 │
@@ -43,7 +44,8 @@ Each service is an independent Spring Boot (Kotlin) application with its own:
 - codebase (folder in the app repo)
 - Dockerfile
 - Docker image on ACR
-- Kubernetes Deployment + Service
+- Kubernetes Deployment + Service, optionally adopted by an Argo Rollout for
+  an explicitly selected progressive-delivery mode
 - ServiceMonitor (Prometheus scraping via /actuator/prometheus)
 - own CloudNativePG cluster and database — Catalog, Orders, Inventory, and Payments. Notifications needs no durable dedup, so it doesn't get a CNPG cluster.
 
@@ -269,15 +271,20 @@ Developer pushes code
 │    2. ./gradlew test                                               │
 │    ──► PR gets green check or red X. No image built. No deploy.    │
 │                                                                    │
-│  On merge to dev:                                                  │
-│    1. ./gradlew build                                              │
-│    2. ./gradlew test                                               │
-│    3. docker build → tag with commit SHA                           │
-│    4. docker push → lab02clusterregistry.azurecr.io/eurotransit/XXX │
-│    5. git clone config repo                                        │
-│    6. update values.yaml with new image tag                        │
-│    7. git commit + push to config repo (main)                      │
-│    ──► Config repo is updated. CI is done. No kubectl, no deploy.  │
+│  On push to dev:                                                   │
+│    1. backend: Gradle build + tests                                │
+│       Frontend: npm lint + build when React source is present      │
+│    2. docker build                                                 │
+│    ──► Validation only. No registry push and no production update. │
+│                                                                    │
+│  On push to main:                                                  │
+│    1. repeat build and tests                                       │
+│    2. docker push → lab02clusterregistry.azurecr.io/eurotransit/XXX │
+│    3. verify the registry's immutable sha256 digest                │
+│    4. git clone config repo main                                   │
+│    5. update values.yaml with the verified image digest            │
+│    6. git commit + push to config repo main                        │
+│    ──► Config repo is updated. CI is done. No kubectl.             │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
 
@@ -313,7 +320,8 @@ eurotransit-application/
 │   ├── Dockerfile
 │   └── nginx.conf
 ├── .github/workflows/
-│   └── ci.yaml
+│   ├── ci.yaml
+│   └── pr.yaml
 ├── docs/
 │   ├── eurotransit-contract.md
 │   ├── capstone-dod.md
@@ -334,11 +342,12 @@ Config repo updated (by CI or manually)
 ┌─ Argo CD ─────────────────────────────────────────────────────────┐
 │                                                                    │
 │  1. Detects new commit on main branch of config repo               │
-│  2. Renders Helm chart with new values (including new image tag)   │
+│  2. Renders Helm chart with new values (including image digest)    │
 │  3. Compares desired state (Git) with live state (cluster)         │
-│  4. Applies the diff: rolling update of the changed Deployment     │
-│  5. Pod pulls new image from ACR, starts, passes health checks     │
-│  6. Old pod is terminated                                          │
+│  4. Standard mode: applies a normal Deployment rolling update      │
+│     Progressive mode: Argo Rollouts creates a candidate            │
+│  5. Candidate pulls the immutable ACR digest and becomes Ready     │
+│  6. Operator promotes or aborts after the strategy validation gate │
 │                                                                    │
 │  If something breaks:                                              │
 │    - Rollback = revert the commit in config repo                   │
@@ -348,7 +357,26 @@ Config repo updated (by CI or manually)
 
 Important: Argo CD has cluster credentials. It NEVER builds images. The
 EuroTransit Argo CD Application uses automated sync with `prune` and `selfHeal`
-enabled.
+enabled. Argo Rollouts is an explicitly installed platform controller. Argo CD
+ignores only the Service selector, Traefik weight, and controller annotations
+that Rollouts owns; every other field remains self-healed from Git.
+
+Frontend, Catalog and Orders select `standard`, `canary`, or `blueGreen` through
+one enum per service. Inventory and Payments have a single disabled-by-default
+Blue/Green boolean. Notifications and the payment gateway simulator remain
+standard rolling Deployments. Progressive mode uses the existing Deployment as
+a `workloadRef`, keeping one pod-template source of truth. Activation is staged:
+pin the running stable digest, adopt it as the first Rollout revision, and only
+then commit a different candidate digest. This is required because a Rollout's
+first revision does not execute update steps.
+
+Canary is used only on the existing public Frontend, Catalog and Orders routes.
+Traefik weights are controlled by Argo Rollouts. Blue/Green keeps the existing
+Service as the active endpoint and creates a preview Service; Inventory and
+Payments receive no Ingress route. Promotion is manual until Prometheus and the
+stable-versus-candidate metric contract have been validated with healthy and
+deliberately faulty candidates. See `docs/deployment-strategies.md` for the
+activation, promotion, abort and return-to-standard procedure.
 ```
 
 ### Config repo structure
@@ -357,7 +385,7 @@ enabled.
 eurotransit-configuration/
 ├── deploy/charts/eurotransit/
 │   ├── Chart.yaml
-│   ├── values.yaml              ← CI updates image tags here
+│   ├── values.yaml              ← CI updates verified image digests here
 │   └── templates/
 │       ├── _helpers.tpl
 │       ├── orders-deployment.yaml
@@ -374,12 +402,15 @@ eurotransit-configuration/
 │       ├── frontend-service.yaml
 │       ├── ingress.yaml
 │       ├── middleware-redirect-https.yaml
-│       ├── orders-canary-ingressroute.yaml
-│       ├── orders-canary-traefikservice.yaml
+│       ├── canary-ingressroutes.yaml
+│       ├── canary-traefikservices.yaml
+│       ├── progressive-rollouts.yaml
+│       ├── progressive-services.yaml
 │       ├── servicemonitor-backend.yaml
 │       └── prometheusrule-backend.yaml
 ├── platform/
 │   ├── argocd/
+│   │   ├── argo-rollouts-application.yaml
 │   │   ├── eurotransit-application.yaml
 │   │   ├── private-config-repo-sealedsecret.yaml
 │   │   ├── middleware.yaml
@@ -415,8 +446,11 @@ eurotransit-configuration/
     │                  │─ push to dev ────►│                  │                │                │                │
     │                  │                   │─ build + test    │                │                │                │
     │                  │                   │─ docker build    │                │                │                │
+    │                  │                   │─ validate only   │                │                │                │
+    │                  │─ push to main ───►│                  │                │                │                │
+    │                  │                   │─ build + test    │                │                │                │
     │                  │                   │─ docker push ───►│                │                │                │
-    │                  │                   │─ update tag ─────────────────────►│                │                │
+    │                  │                   │─ update digest ──────────────────►│                │                │
     │                  │                   │                  │                │─ new commit ──►│                │
     │                  │                   │                  │                │                │─ helm render   │
     │                  │                   │                  │                │                │─ diff state    │

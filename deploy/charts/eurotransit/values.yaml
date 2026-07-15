@@ -1,16 +1,67 @@
 namespace: eurotransit
+
+# Exactly one mode is selected for each service that supports both progressive
+# strategies. The safe default keeps the existing Kubernetes Deployment path.
+deploymentStrategies:
+  frontend: standard
+  catalog: standard
+  orders: standard
+
+progressiveDelivery:
+  # Keep the previous ReplicaSet available for a fast rollback after promotion.
+  scaleDownDelaySeconds: 1800
+  progressDeadlineSeconds: 600
+  # Require sustained readiness before a candidate is considered available.
+  minReadySeconds: 20
+  revisionHistoryLimit: 3
+  rollbackWindowRevisions: 2
+
+canary:
+  frontend:
+    host: g02.cpo2026.it
+    path: /
+    initialWeight: 10
+  catalog:
+    host: g02.cpo2026.it
+    path: /api/v1/catalog
+    initialWeight: 10
+  orders:
+    host: g02.cpo2026.it
+    path: /api/v1/orders
+    initialWeight: 10
+
+# Inventory and Payments support Blue/Green only, so a boolean is sufficient.
+# Frontend, Catalog and Orders select Blue/Green through deploymentStrategies.
+blueGreen:
+  inventory:
+    enabled: false
+  payments:
+    enabled: false
+
 frontend:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
     tag: latest
-    # Always, not IfNotPresent: tag is mutable ("latest"), matching the same
-    # reasoning already applied to the 5 backend services.
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
-  # Bumped by CI on every push to frontend/** (see .github/workflows/ci.yaml
-  # in the application repo) so the pod template hash changes and
-  # Kubernetes actually rolls out the new image.
+  # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "unset"
+  # Static nginx, tiny footprint. Set explicitly - an unset resources block
+  # leaves the pod BestEffort, invisible to the scheduler's placement math,
+  # which is exactly what let every app service pile onto one already-full
+  # node instead of spreading out (see docs/ai-logs.md 2026-07-14).
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
   service:
     type: ClusterIP
     port: 80
@@ -19,14 +70,23 @@ catalog:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
     tag: latest
-    # Always, not IfNotPresent: tag is mutable now (CI always pushes "latest"),
-    # so a cached local image under that name must never be trusted as current.
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
-  # Bumped by CI on every push to main (see .github/workflows/ci.yaml) so the
-  # pod template hash changes and Kubernetes actually rolls out the new
-  # image - "latest" alone never changes the Deployment spec, so nothing
-  # would otherwise trigger a restart.
+  # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~320Mi idle) plus headroom, not guessed -
+  # see docs/ai-logs.md 2026-07-14 for the measurement this was based on.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
   service:
     type: ClusterIP
     port: 8080
@@ -35,8 +95,23 @@ orders:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/orders
     tag: latest
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~320Mi idle) plus headroom - orders gets
+  # slightly more than its siblings since it runs 4 Kafka consumers plus the
+  # outbox poller on top of its own HTTP handler.
+  resources:
+    requests:
+      cpu: 150m
+      memory: 400Mi
+    limits:
+      cpu: 600m
+      memory: 800Mi
   service:
     type: ClusterIP
     port: 8080
@@ -46,12 +121,19 @@ orders:
   springApplicationJson:
     app:
       inventory:
+        # WebClient responseTimeout on the Orders->Inventory call. Enforced by
+        # the client's Netty connector (InventoryClient), which is what lets the
+        # inventory-client circuit breaker record a hung call as a failure.
+        timeout: 2s
         connection-pool:
           name: orders-inventory
           max-connections: 20
           pending-acquire-max-count: 50
           pending-acquire-timeout: 500ms
       payments:
+        # Must exceed Payments' own 5s gateway timeout (payments app.gateway.timeout)
+        # so Orders doesn't abort a call Payments is still working on.
+        timeout: 6s
         connection-pool:
           name: orders-payments
           max-connections: 20
@@ -82,12 +164,6 @@ orders:
             failure-rate-threshold: 50
             wait-duration-in-open-state: 10s
             permitted-number-of-calls-in-half-open-state: 3
-      timelimiter:
-        instances:
-          inventory-client:
-            timeout-duration: 2s
-          payments-client:
-            timeout-duration: 6s
       retry:
         instances:
           inventory-client:
@@ -115,31 +191,29 @@ orders:
         clientSecret:
           secretName: orders-service-client
           secretKey: client-secret
-canary:
-  orders:
-    enabled: false
-    host: g02.cpo2026.it
-    stableWeight: 90
-    canaryWeight: 10
-    stableServiceName: ""
-    canaryServiceName: eurotransit-orders-canary
 inventory:
   replicaCount: 1
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
     tag: latest
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
-  service:
-    type: ClusterIP
-    port: 8080
+  # Sized from observed real usage (~350Mi idle) plus headroom.
   resources:
     requests:
       cpu: 250m
-      memory: 384Mi
+      memory: 400Mi
     limits:
       cpu: "1"
-      memory: 768Mi
+      memory: 800Mi
+  service:
+    type: ClusterIP
+    port: 8080
   autoscaling:
     enabled: false
     minReplicas: 1
@@ -166,8 +240,21 @@ payments:
   image:
     repository: lab02clusterregistry.azurecr.io/eurotransit/payments
     tag: latest
+    # Empty by default: standard mode resolves "latest" via restartedAt, same as
+    # today's CI/CD flow. requireProgressiveDigest already fails the render if
+    # this service is switched to canary/blueGreen without a real digest here -
+    # populate it only at that point, not as a standing default.
+    digest: ""
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~305Mi idle) plus headroom.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
   service:
     type: ClusterIP
     port: 8080
@@ -232,6 +319,14 @@ notifications:
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-12T16:50:05Z-manual-fix"
+  # Sized from observed real usage (~245Mi idle) plus headroom.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 320Mi
+    limits:
+      cpu: 500m
+      memory: 640Mi
   service:
     type: ClusterIP
     port: 8080

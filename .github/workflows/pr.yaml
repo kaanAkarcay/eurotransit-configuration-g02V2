@@ -1,0 +1,96 @@
+name: configuration-pr-check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: raven-actions/actionlint@v2
+
+  helm-validation:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - standard
+          - frontend-canary
+          - catalog-canary
+          - orders-canary
+          - frontend-blue-green
+          - catalog-blue-green
+          - orders-blue-green
+          - inventory-blue-green
+          - payments-blue-green
+          - mixed
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4.3.1
+        with:
+          version: v3.15.3
+
+      - name: lint and render chart
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          chart=deploy/charts/eurotransit
+          values_args=()
+          # requireProgressiveDigest fails the render for any service switched to
+          # canary/blueGreen without a real sha256 digest - values.yaml no longer
+          # carries a standing default (see commit dropping the stale defaults),
+          # so every progressive scenario here must supply its own. This is a
+          # well-formed placeholder for render validation only, not a real image.
+          dummy_digest="sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+          case "$SCENARIO" in
+            standard) ;;
+            frontend-canary) values_args+=(--set deploymentStrategies.frontend=canary --set frontend.image.digest="$dummy_digest") ;;
+            catalog-canary) values_args+=(--set deploymentStrategies.catalog=canary --set catalog.image.digest="$dummy_digest") ;;
+            orders-canary) values_args+=(--set deploymentStrategies.orders=canary --set orders.image.digest="$dummy_digest") ;;
+            frontend-blue-green) values_args+=(--set deploymentStrategies.frontend=blueGreen --set frontend.image.digest="$dummy_digest") ;;
+            catalog-blue-green) values_args+=(--set deploymentStrategies.catalog=blueGreen --set catalog.image.digest="$dummy_digest") ;;
+            orders-blue-green) values_args+=(--set deploymentStrategies.orders=blueGreen --set orders.image.digest="$dummy_digest") ;;
+            inventory-blue-green) values_args+=(--set blueGreen.inventory.enabled=true --set inventory.image.digest="$dummy_digest") ;;
+            payments-blue-green) values_args+=(--set blueGreen.payments.enabled=true --set payments.image.digest="$dummy_digest") ;;
+            mixed)
+              values_args+=(
+                --set deploymentStrategies.frontend=canary
+                --set frontend.image.digest="$dummy_digest"
+                --set deploymentStrategies.catalog=blueGreen
+                --set catalog.image.digest="$dummy_digest"
+                --set blueGreen.payments.enabled=true
+                --set payments.image.digest="$dummy_digest"
+              )
+              ;;
+            *)
+              echo "::error::Unknown validation scenario: $SCENARIO"
+              exit 1
+              ;;
+          esac
+
+          helm lint "$chart" "${values_args[@]}"
+          helm template eurotransit "$chart" \
+            --namespace eurotransit \
+            "${values_args[@]}" \
+            > rendered.yaml
+
+      - name: validate rendered Kubernetes resources
+        uses: docker://ghcr.io/yannh/kubeconform:v0.7.0
+        with:
+          args: >-
+            -strict
+            -summary
+            -ignore-missing-schemas
+            -schema-location default
+            -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+            rendered.yaml
