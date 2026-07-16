@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/name: {{ $service }}
     app.kubernetes.io/instance: {{ $.Release.Name }}
 spec:
-  minAvailable: {{ $config.pdb.minAvailable }}
+  minAvailable: {{ $config.pdb.minAvailable | default 1 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ $service }}
