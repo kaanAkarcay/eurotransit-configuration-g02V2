@@ -101,6 +101,60 @@ not assumed from the handoff doc alone.
 
 ---
 
+### 2026-07-15 21:55
+
+**Agent**
+
+Codex GPT-5
+
+**Task**
+
+Implement the configuration/documentation side for two resilience DoD items:
+verify liveness probes ignore downstream failures, and configure HTTP 429
+backpressure/load shedding for Orders.
+
+**Files Modified**
+
+- `deploy/charts/eurotransit/values.yaml`
+- `docs/resilience/orders-load-shedding.md`
+- `docs/resilience/probe-review.md`
+- `docs/ai-logs.md`
+
+**Summary**
+
+Added `app.backpressure.orders` under `orders.springApplicationJson` so the
+Orders 429 load-shedding policy is owned by GitOps at runtime. The companion
+application-repo change supplies the actual WebFlux filter.
+
+Replaced the stale probe review with the current state: Helm uses
+`/actuator/health/liveness` and `/actuator/health/readiness`, backend services
+now include Actuator probes, and static repository evidence aligns with the
+liveness boundary. The document still keeps the task open until controlled
+downstream-failure runtime evidence proves liveness does not trigger restarts.
+
+Added a dedicated Orders load-shedding runbook with scope, configuration,
+Prometheus queries, k6 invocation, tuning guidance, and rollback.
+
+**Validation**
+
+Validation performed in this branch includes `helm lint`, `helm template`,
+server-side dry-run, application Orders tests, and live read-only port-forward
+checks showing backend liveness/readiness endpoints return `200 {"status":"UP"}`
+without bearer tokens. Live downstream failure injection remains pending because
+it is a non-read-only runtime action. Dockerized k6 was pulled and the script was
+verified to fail fast when `AUTH_TOKEN` is absent; authenticated k6 load execution
+remains pending until a valid Orders-audience bearer token is supplied outside
+Git.
+
+**Potential Risks**
+
+The configured concurrency limit (`20`) is an initial safety threshold. It should
+be tuned only from live load evidence and not marked as a completed DoD item
+until `429` behavior has been observed without elevated `5xx` or liveness
+restart churn.
+
+---
+
 ### 2026-07-15 20:29
 
 **Agent**
@@ -2223,3 +2277,27 @@ behavior until Prometheus is restored.
 
 Only local rendering and read-only cluster inspection were used. No live
 Rollout or Argo CD state was changed.
+# 2026-07-16 - Resilience live-check enablers
+
+Created a fresh branch from `origin/dev` for the remaining live resilience test
+prerequisites: critical-service PDBs, Orders -> Payments chaos validation, and
+Payments -> gateway chaos validation.
+
+Repository changes:
+
+- Added Helm-rendered `policy/v1` PodDisruptionBudgets for Orders, Inventory
+  and Payments, each with `minAvailable: 1`.
+- Added explicit Orders timeout binding under
+  `resilience4j.timelimiter.instances.inventory-client.timeout-duration` and
+  `resilience4j.timelimiter.instances.payments-client.timeout-duration`, because
+  the current Orders clients read those properties for Reactor Netty
+  `responseTimeout`.
+- Added one-shot Chaos Mesh `NetworkChaos` manifests for Orders -> Payments
+  latency and Payments -> payment-gateway-sim latency.
+- Added runbooks documenting prerequisites, load generation, Prometheus
+  queries, success criteria, and rollback.
+
+Important caveat: with the current default `replicaCount: 1`, each new PDB will
+correctly protect the service but report zero allowed disruptions. A real
+node-drain availability proof still needs at least two replicas, either by
+temporary replica overrides or HPA `minReplicas >= 2`.
