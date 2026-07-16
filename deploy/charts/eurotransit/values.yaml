@@ -94,9 +94,18 @@ orders:
     # today's CI/CD flow. requireProgressiveDigest already fails the render if
     # this service is switched to canary/blueGreen without a real digest here -
     # populate it only at that point, not as a standing default.
-    digest: "sha256:b2842f9b6721cbb84639bf2fa585fa251c7472980d6186590d727b2bef767a70"
+    #
+    # CI's "update GitOps image and commit" step unconditionally set this to
+    # sha256:b2842f9b... on 2026-07-16, regardless of deploymentStrategies.orders
+    # being "standard" - the same bug the canary PR review already fixed once,
+    # reintroduced via ci.yaml's yq step instead of a static default. That
+    # digest also turned out to not durably exist in ACR (kubelet: manifest
+    # "not found" after 5+ retries over 4 minutes) - a second, separate
+    # registry/CI reliability issue. Reset to empty here; ci.yaml's digest step
+    # needs to check deploymentStrategies.orders before setting this field.
+    digest: ""
     pullPolicy: Always
-  restartedAt: "2026-07-16T00:07:27Z-f59465c131c2778c6425bc624563273935732274"
+  restartedAt: "2026-07-16T00:36:48Z-f59465c131c2778c6425bc624563273935732274"
   # Re-measured 2026-07-15: actual usage steady at ~315Mi (highest of the 5,
   # matches it running 4 Kafka consumers plus the outbox poller on top of its
   # own HTTP handler). Trimmed from 400Mi/800Mi, kept more headroom than its
