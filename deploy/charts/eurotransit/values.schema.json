@@ -113,6 +113,7 @@
             "safetyQueryWindow",
             "canaryWeights",
             "minimumRequests",
+            "ordersMinimumRequests",
             "maximumP95LatencySeconds",
             "failureLimit",
             "inconclusiveLimit",
@@ -170,6 +171,7 @@
               "items": { "type": "integer", "minimum": 1, "maximum": 100 }
             },
             "minimumRequests": { "type": "integer", "minimum": 1 },
+            "ordersMinimumRequests": { "type": "integer", "minimum": 1 },
             "maximumP95LatencySeconds": { "type": "number", "exclusiveMinimum": 0 },
             "failureLimit": { "type": "integer", "minimum": 0 },
             "inconclusiveLimit": { "type": "integer", "minimum": 0 },
