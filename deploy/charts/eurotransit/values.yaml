@@ -105,7 +105,7 @@ orders:
     # needs to check deploymentStrategies.orders before setting this field.
     digest: ""
     pullPolicy: Always
-  restartedAt: "2026-07-16T00:36:48Z-f59465c131c2778c6425bc624563273935732274"
+  restartedAt: "2026-07-16T01:42:38Z-f72809ecea0ca49cb04ea3a24d60ee6ecc22fc15"
   # Re-measured 2026-07-15: actual usage steady at ~315Mi (highest of the 5,
   # matches it running 4 Kafka consumers plus the outbox poller on top of its
   # own HTTP handler). Trimmed from 400Mi/800Mi, kept more headroom than its
