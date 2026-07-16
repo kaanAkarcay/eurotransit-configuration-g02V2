@@ -2130,6 +2130,53 @@ No live rollout was promoted, aborted, patched, or synchronized.
 
 ---
 
+### 2026-07-16 21:30
+
+**Agent**
+
+OpenAI Codex
+
+**Task**
+
+Address the remaining second-review findings on progressive analysis PR #38.
+
+**Files Modified**
+
+- `deploy/charts/eurotransit/templates/analysis-templates.yaml`
+- `deploy/charts/eurotransit/templates/progressive-rollouts.yaml`
+- `deploy/charts/eurotransit/templates/_helpers.tpl`
+- `deploy/charts/eurotransit/values.yaml`
+- `deploy/charts/eurotransit/values.schema.json`
+- `deploy/charts/eurotransit/tests/*`
+- `docs/deployment-strategies.md`
+- `docs/architecture-design.md`
+- `docs/ai-logs.md`
+
+**Summary**
+
+Stabilized the Linux PowerShell contract test, added a calculated conservative
+Rollout progress deadline with abort-on-expiry, and separated final
+volume/latency gates from early sampled 5xx/restart/readiness safety metrics.
+All automation remains disabled pending live Prometheus evidence.
+
+**Potential Risks**
+
+PromQL was rendered and reviewed but not executed against a running Prometheus
+instance. Runtime deadline abort, promotion, and rollback were not exercised.
+
+**Confidence**
+
+High for deterministic chart/test behavior; medium for runtime Prometheus and
+controller behavior until the documented live validation is performed.
+
+**Notes**
+
+The exact CI root cause was `$LASTEXITCODE=1` leaking from the final expected
+failing `helm template` invocation on Ubuntu after all assertions had passed.
+No cluster-changing command was run.
+
+---
+
 ### 2026-07-16 18:30
 
 **Agent**

@@ -218,11 +218,28 @@ Every candidate Pod must remain Ready for
 Rollouts considers it available. This filters out readiness that succeeds only
 briefly during startup.
 
-`progressDeadlineSeconds` marks a Rollout that stops progressing, but this chart
-does not set `progressDeadlineAbort: true`. Exceeding the deadline therefore
-does not promise an automatic rollback. An authorized operator must inspect the
-Rollout, then explicitly promote, retry or abort it. Manual pauses are an
-intentional part of the strategy and are not a metric-based rollback policy.
+The chart renders `progressDeadlineSeconds: 2100` and
+`progressDeadlineAbort: true`. The configured deadline is calculated from the
+longest automated strategy:
+
+```text
+Canary analysis = 4 stages * 300s                  = 1200s
+Blue/Green analysis = pre 300s + post 300s         =  600s
+longest automated analysis                         = 1200s
+minReadySeconds                                    =   20s
+scheduling / ReplicaSet / provider safety margin   =  600s
+minimum accepted by Helm                           = 1820s
+configured deadline                                = 2100s
+```
+
+Argo Rollouts 1.9.0 classifies an active Analysis or indefinite Pause step as
+indefinite and excludes it from its progress-deadline estimation. The chart
+still budgets the full analysis wall-clock time conservatively and validates
+the formula so a future values-only change cannot restore the nominal
+ten-minute deadline. If the controller does exceed the deadline,
+`progressDeadlineAbort: true` requests an abort rather than only recording
+`ProgressDeadlineExceeded`. CI verifies the rendered fields and calculations;
+it does not exercise runtime abort or rollback behavior.
 
 With analysis disabled for that service, the configured sequence is:
 
@@ -357,20 +374,55 @@ matching progressive strategy is active. There is no global switch that can
 silently automate every Rollout.
 
 For each stage, the shared template enforces one complete five-minute
-observation window:
+observation window with two measurement classes:
 
-- at least 15 non-actuator candidate requests over the full window;
-- zero candidate HTTP 5xx responses;
-- p95 candidate HTTP latency at or below 500 ms;
-- zero candidate container restarts;
-- candidate readiness sampled every 15 seconds for the full window.
+- final metrics after five minutes: at least 15 non-actuator candidate requests
+  and p95 candidate HTTP latency at or below 500 ms;
+- safety metrics from the 30-second warm-up through the end of the window:
+  zero HTTP 5xx responses, zero container restarts, and candidate readiness.
 
-Volume, errors, latency, and restarts are evaluated once after five minutes.
-Readiness is sampled 20 times. Empty, missing, NaN, bad, inconclusive, or
-provider-error results fail on the first measurement. The request-volume query
-does not synthesize zero into a successful result; the 5xx query may use zero
-only after the independent request-volume gate proves candidate telemetry
-exists.
+With the defaults, each safety metric is sampled 19 times at 15-second
+intervals, beginning at 30 seconds and ending at 300 seconds. `failureLimit`,
+`inconclusiveLimit`, and `consecutiveErrorLimit` are zero, so the first real
+failure or provider error terminates the AnalysisRun. Empty, missing, NaN, bad,
+inconclusive, or provider-error results do not pass. The 5xx expression returns
+zero only when the matching candidate HTTP counter exists; a missing candidate
+metric remains empty and fails. The independent final volume gate still
+prevents promotion without enough application traffic.
+
+The rendered safety queries use the candidate pod-template hash:
+
+```promql
+sum(increase(http_server_requests_seconds_count{
+  namespace="eurotransit",
+  service=~"<service>(-canary|-preview)?",
+  pod=~"<service>-<pod-template-hash>-.*",
+  status=~"5..",
+  uri!~"/actuator.*"
+}[1m]))
+or
+(0 * sum(increase(http_server_requests_seconds_count{
+  namespace="eurotransit",
+  service=~"<service>(-canary|-preview)?",
+  pod=~"<service>-<pod-template-hash>-.*",
+  uri!~"/actuator.*"
+}[1m])))
+```
+
+```promql
+sum(increase(kube_pod_container_status_restarts_total{
+  namespace="eurotransit",
+  pod=~"<service>-<pod-template-hash>-.*"
+}[1m]))
+```
+
+```promql
+min(kube_pod_status_ready{
+  namespace="eurotransit",
+  pod=~"<service>-<pod-template-hash>-.*",
+  condition="true"
+})
+```
 
 The live Prometheus scrape configuration was inspected directly. It exposes the
 `service` and `pod` target labels, but did not copy
@@ -380,11 +432,77 @@ setting. Queries therefore correlate the candidate through Argo's
 Service/preview Service label. No live query result is claimed: the Prometheus
 CR was observed with zero desired replicas on 2026-07-16.
 
-Before enabling one supported service, restore Prometheus, verify its targets,
-send controlled application traffic to the exact candidate destination, and
-execute every rendered query against that traffic. Keep the Git default false
-until healthy, empty, low-volume, 5xx, high-latency, restart, not-ready, and
-provider-error cases have been observed.
+### Safe activation gate for supported services
+
+Merging this capability does not activate automation. All `enabled` values
+remain false. Use this sequence separately for Catalog, Inventory, and
+Payments:
+
+1. Restore Prometheus through the approved platform/GitOps procedure and verify
+   the monitoring components read-only:
+
+   ```powershell
+   kubectl get prometheus,pods,service -n monitoring
+   kubectl get servicemonitor -n eurotransit
+   kubectl get pods -n eurotransit --show-labels
+   ```
+
+2. Adopt the progressive baseline while automated analysis is still false:
+   Canary or Blue/Green for Catalog; Blue/Green only for Inventory and
+   Payments. Confirm the candidate or preview Service has endpoints:
+
+   ```powershell
+   kubectl get rollout,analysisrun -n eurotransit
+   kubectl get endpointslice -n eurotransit
+   ```
+
+3. Render the exact AnalysisTemplate and record the service/pod selectors that
+   will be queried:
+
+   ```powershell
+   helm template eurotransit deploy/charts/eurotransit --namespace eurotransit `
+     --show-only templates/analysis-templates.yaml `
+     --set deploymentStrategies.catalog=canary `
+     --set catalog.image.digest=sha256:<verified-digest> `
+     --set progressiveDelivery.automatedAnalysis.services.catalog.enabled=true
+   ```
+
+4. Start the matching application traffic script against the exact candidate
+   destination before the analysis window. Catalog traffic can be read-only.
+   Inventory and Payments business traffic is state-changing and requires the
+   explicit acknowledgements described in the Application repository.
+
+5. Port-forward Prometheus and execute every rendered query through its
+   read-only HTTP API:
+
+   ```powershell
+   kubectl port-forward -n monitoring service/kube-prometheus-stack-prometheus 9090:9090
+   Invoke-RestMethod 'http://127.0.0.1:9090/api/v1/targets'
+   Invoke-RestMethod 'http://127.0.0.1:9090/api/v1/query?query=<url-encoded-rendered-query>'
+   ```
+
+   Verify that `service` and `pod` labels identify only the candidate revision.
+   Exercise healthy, missing-metric, low-volume, 5xx, high-latency, restart,
+   and not-ready cases. Record actual query results; YAML rendering alone is
+   insufficient.
+
+6. Only after the service-specific evidence is reviewed, enable exactly one
+   service in a new configuration PR:
+
+   ```yaml
+   progressiveDelivery:
+     automatedAnalysis:
+       services:
+         catalog:
+           enabled: true
+         inventory:
+           enabled: false
+         payments:
+           enabled: false
+   ```
+
+   For Inventory or Payments, switch only that corresponding boolean to true
+   while its Blue/Green selector is enabled. Do not enable Frontend or Orders.
 
 Example Catalog opt-in after that validation:
 
@@ -403,7 +521,9 @@ Blue/Green runs the same complete analysis against preview before promotion and
 active after promotion. `autoPromotionEnabled` becomes true only for the
 explicitly enabled service. The old ReplicaSet is retained for 1200 seconds;
 Helm rejects a value that is not greater than analysis duration plus
-`postPromotionSafetyMarginSeconds`.
+`postPromotionSafetyMarginSeconds`. The same Helm validation rejects a progress
+deadline below the longest automated analysis plus `minReadySeconds` and its
+separate scheduling/provider margin.
 
 Do not edit a live Rollout to bypass this GitOps contract. Emergency
 promotion/abort/retry commands remain operator-controlled and cluster-mutating.
@@ -418,8 +538,10 @@ helm template eurotransit deploy/charts/eurotransit --namespace eurotransit
 ./deploy/charts/eurotransit/tests/validate-analysis.ps1
 ```
 
-The test script renders supported opt-ins, checks the PromQL shape and
-five-minute timing, rejects invalid durations/weights/delays and unsupported
-services, and evaluates healthy/failing result fixtures. CI additionally renders
-every supported strategy and validates the generated Kubernetes resources with
-kubeconform.
+The test script renders supported opt-ins, checks final and early-abort timing,
+rejects invalid schema/helper scenarios for their specific semantic reason,
+validates deadline/retention calculations, and evaluates healthy/failing result
+fixtures. The fixtures simulate result arrays; they do not parse or execute
+PromQL. CI additionally renders every supported strategy and validates the
+generated Kubernetes resources with kubeconform. No runtime Prometheus query,
+Rollout abort, promotion, or rollback is claimed by these tests.

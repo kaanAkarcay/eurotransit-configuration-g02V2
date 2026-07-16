@@ -375,12 +375,16 @@ Traefik weights are controlled by Argo Rollouts. Blue/Green keeps the existing
 Service as the active endpoint and creates a preview Service; Inventory and
 Payments receive no Ingress route. Metric-driven promotion is fail-closed and
 opt-in per service: Catalog, Inventory, and Payments can use the shared
-five-minute AnalysisTemplate only after live Prometheus verification. Frontend
-and Orders remain technically blocked from automation because their current
-telemetry cannot reliably attribute application behavior/the complete money path
-to the candidate revision. See `docs/deployment-strategies.md` for the
-activation, traffic, analysis, promotion, abort and return-to-standard
-procedure.
+five-minute AnalysisTemplate only after live Prometheus verification. Final
+volume/latency gates use the complete window; 5xx, restart, and readiness
+signals are sampled every 15 seconds after a startup warm-up. Frontend and
+Orders remain technically blocked from automation because their current
+telemetry cannot reliably attribute application behavior/the complete money
+path to the candidate revision. The conservative Rollout deadline includes all
+configured analysis windows, readiness, and an operational margin and requests
+controller abort on expiry. See `docs/deployment-strategies.md` for the
+calculation, activation, traffic, analysis, promotion, abort and
+return-to-standard procedure.
 ```
 
 ### Config repo structure
@@ -480,4 +484,9 @@ and latest pod-template hash. HTTP
 signals come from Micrometer through the existing ServiceMonitors; Kubernetes
 readiness and restart signals come from kube-state-metrics. Analysis is
 fail-closed and opt-in. Frontend is excluded until per-track HTTP telemetry is
-available.
+available, and Orders is excluded until full money-path completion can be
+attributed to the candidate revision. Critical safety signals are sampled
+during the observation window, while traffic volume and p95 latency are final
+full-window gates. Local fixtures validate Argo expression behavior over
+simulated arrays but do not execute PromQL; live query evidence is mandatory
+before enabling Catalog, Inventory, or Payments.
