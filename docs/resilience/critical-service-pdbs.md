@@ -35,9 +35,17 @@ The current default replica count for Orders, Inventory and Payments is still
 `1`. With one replica and `minAvailable: 1`, Kubernetes will correctly report
 `ALLOWED DISRUPTIONS = 0`.
 
-That is protective, but it means a voluntary eviction test cannot prove
-continued availability during a node drain yet. Safe node-drain validation needs
-at least two available replicas for each service being tested, either by:
+That is protective in the narrow sense — the eviction API refuses to take down
+the only pod rather than silently causing an outage — but it carries an
+operational cost worth knowing before the next node maintenance: with
+`ALLOWED DISRUPTIONS = 0`, `kubectl drain` on the node hosting these pods never
+completes. AKS node image upgrades and cluster autoscaler scale-down both drain,
+so this surfaces outside of testing. Until replicas >= 2, scale up first or drain
+with `--disable-eviction`.
+
+It also means a voluntary eviction test cannot prove continued availability
+during a node drain yet. Safe node-drain validation needs at least two available
+replicas for each service being tested, either by:
 
 - temporarily setting `replicaCount: 2`, or
 - enabling HPA with `minReplicas >= 2`.

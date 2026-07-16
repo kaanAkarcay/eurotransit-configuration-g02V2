@@ -36,6 +36,27 @@ This exceeds the configured 2s slow-call threshold while remaining below the 5s
 transport timeout, so it validates slow-call breaker behavior rather than only
 connection failure behavior.
 
+Two consequences of staying below the transport timeout — both intended, both
+worth knowing before the first run:
+
+- The gateway call **succeeds**. Until the breaker opens
+  (`minimum-number-of-calls: 5`), the first calls reach Stripe and authorize for
+  real. This experiment moves money; it is not a dry run.
+- Orders must already be running with
+  `resilience4j.timelimiter.instances.payments-client.timeout-duration: 6s`
+  (added in this PR). With the previous effective value of 2s, Orders abandons
+  the call at 2s and marks the order FAILED while the gateway authorizes at ~3s
+  — an authorized payment against a failed order, which nothing reconciles.
+  Apply this manifest only after Argo CD has synced and the Orders pod restarted.
+
+Pre-flight check:
+
+```bash
+kubectl -n eurotransit exec deploy/eurotransit-orders -- \
+  printenv SPRING_APPLICATION_JSON \
+  | grep -o '"payments-client":{"timeout-duration":"[^"]*"'
+```
+
 ## Load generation
 
 Payments is not exposed through the public Ingress. Use a port-forward:
