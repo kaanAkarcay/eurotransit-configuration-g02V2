@@ -32,7 +32,9 @@ jobs:
           - inventory-blue-green
           - payments-blue-green
           - mixed
-          - automation-enabled
+          - catalog-analysis
+          - inventory-analysis
+          - payments-analysis
           - automation-disabled
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +57,15 @@ jobs:
           dummy_digest="sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
           case "$SCENARIO" in
-            standard) ;;
+            standard)
+              values_args+=(
+                --set deploymentStrategies.frontend=standard
+                --set deploymentStrategies.catalog=standard
+                --set deploymentStrategies.orders=standard
+                --set blueGreen.inventory.enabled=false
+                --set blueGreen.payments.enabled=false
+              )
+              ;;
             frontend-canary) values_args+=(--set deploymentStrategies.frontend=canary --set frontend.image.digest="$dummy_digest") ;;
             catalog-canary) values_args+=(--set deploymentStrategies.catalog=canary --set catalog.image.digest="$dummy_digest") ;;
             orders-canary) values_args+=(--set deploymentStrategies.orders=canary --set orders.image.digest="$dummy_digest") ;;
@@ -74,21 +84,33 @@ jobs:
                 --set payments.image.digest="$dummy_digest"
               )
               ;;
-            automation-enabled)
+            catalog-analysis)
               values_args+=(
-                --set progressiveDelivery.automatedAnalysis.enabled=true
+                --set progressiveDelivery.automatedAnalysis.services.catalog.enabled=true
                 --set deploymentStrategies.catalog=canary
                 --set catalog.image.digest="$dummy_digest"
-                --set deploymentStrategies.orders=canary
-                --set orders.image.digest="$dummy_digest"
+              )
+              ;;
+            inventory-analysis)
+              values_args+=(
+                --set progressiveDelivery.automatedAnalysis.services.inventory.enabled=true
                 --set blueGreen.inventory.enabled=true
                 --set inventory.image.digest="$dummy_digest"
+              )
+              ;;
+            payments-analysis)
+              values_args+=(
+                --set progressiveDelivery.automatedAnalysis.services.payments.enabled=true
                 --set blueGreen.payments.enabled=true
                 --set payments.image.digest="$dummy_digest"
               )
               ;;
             automation-disabled)
-              values_args+=(--set progressiveDelivery.automatedAnalysis.enabled=false)
+              values_args+=(
+                --set progressiveDelivery.automatedAnalysis.services.catalog.enabled=false
+                --set progressiveDelivery.automatedAnalysis.services.inventory.enabled=false
+                --set progressiveDelivery.automatedAnalysis.services.payments.enabled=false
+              )
               ;;
             *)
               echo "::error::Unknown validation scenario: $SCENARIO"
@@ -112,3 +134,16 @@ jobs:
             -schema-location default
             -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
             rendered.yaml
+
+  progressive-analysis-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4.3.1
+        with:
+          version: v3.15.3
+
+      - name: validate fail-closed analysis configuration and fixtures
+        shell: pwsh
+        run: ./deploy/charts/eurotransit/tests/validate-analysis.ps1

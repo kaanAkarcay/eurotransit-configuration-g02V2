@@ -1,0 +1,92 @@
+[
+  {
+    "name": "healthy-full-window",
+    "requestVolume": [30],
+    "http5xx": [0],
+    "p95Latency": [0.22],
+    "containerRestarts": [0],
+    "ready": [1],
+    "providerError": false,
+    "expectedSuccess": true
+  },
+  {
+    "name": "zero-traffic",
+    "requestVolume": [0],
+    "http5xx": [0],
+    "p95Latency": [0.10],
+    "containerRestarts": [0],
+    "ready": [1],
+    "providerError": false,
+    "expectedSuccess": false
+  },
+  {
+    "name": "insufficient-ten-percent-sample",
+    "requestVolume": [14],
+    "http5xx": [0],
+    "p95Latency": [0.10],
+    "containerRestarts": [0],
+    "ready": [1],
+    "providerError": false,
+    "expectedSuccess": false
+  },
+  {
+    "name": "candidate-5xx",
+    "requestVolume": [30],
+    "http5xx": [1],
+    "p95Latency": [0.10],
+    "containerRestarts": [0],
+    "ready": [1],
+    "providerError": false,
+    "expectedSuccess": false
+  },
+  {
+    "name": "latency-regression",
+    "requestVolume": [30],
+    "http5xx": [0],
+    "p95Latency": [0.51],
+    "containerRestarts": [0],
+    "ready": [1],
+    "providerError": false,
+    "expectedSuccess": false
+  },
+  {
+    "name": "candidate-restarted",
+    "requestVolume": [30],
+    "http5xx": [0],
+    "p95Latency": [0.10],
+    "containerRestarts": [1],
+    "ready": [1],
+    "providerError": false,
+    "expectedSuccess": false
+  },
+  {
+    "name": "candidate-not-ready",
+    "requestVolume": [30],
+    "http5xx": [0],
+    "p95Latency": [0.10],
+    "containerRestarts": [0],
+    "ready": [0],
+    "providerError": false,
+    "expectedSuccess": false
+  },
+  {
+    "name": "absent-prometheus-result",
+    "requestVolume": [],
+    "http5xx": [],
+    "p95Latency": [],
+    "containerRestarts": [],
+    "ready": [],
+    "providerError": false,
+    "expectedSuccess": false
+  },
+  {
+    "name": "prometheus-provider-error",
+    "requestVolume": [30],
+    "http5xx": [0],
+    "p95Latency": [0.10],
+    "containerRestarts": [0],
+    "ready": [1],
+    "providerError": true,
+    "expectedSuccess": false
+  }
+]
