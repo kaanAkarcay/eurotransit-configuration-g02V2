@@ -231,7 +231,7 @@ inventory:
     # populate it only at that point, not as a standing default.
     digest: ""
     pullPolicy: Always
-  restartedAt: "2026-07-15T15:13:41Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
+  restartedAt: "2026-07-16T15:20:36Z-ff70e719bbb618289dac2fed87c5423673089790"
   # Re-measured 2026-07-15: actual usage steady at ~294Mi, so 400Mi/800Mi left
   # ~2.7x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   # CPU untouched - the HPA's targetCPUUtilizationPercentage needs a stable
