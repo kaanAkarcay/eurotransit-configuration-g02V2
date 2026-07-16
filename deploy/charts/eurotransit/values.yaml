@@ -13,6 +13,29 @@ progressiveDelivery:
   minReadySeconds: 20
   revisionHistoryLimit: 3
   rollbackWindowRevisions: 2
+  automatedAnalysis:
+    # Fail-closed operational default. Enable only after Prometheus is running
+    # and the queries below have been verified against live candidate traffic.
+    enabled: false
+    prometheusAddress: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+    duration: 5m
+    interval: 15s
+    queryWindow: 1m
+    initialDelay: 30s
+    canaryWeights:
+      - 10
+      - 25
+      - 50
+      - 100
+    # At 60 public requests/minute, a 10% Canary receives about 6/minute.
+    minimumRequests: 5
+    maximumP95LatencySeconds: 0.5
+    failureLimit: 1
+    inconclusiveLimit: 1
+    consecutiveErrorLimit: 1
+  blueGreen:
+    # Must remain longer than the complete post-promotion analysis.
+    scaleDownDelaySeconds: 900
 canary:
   frontend:
     host: g02.cpo2026.it

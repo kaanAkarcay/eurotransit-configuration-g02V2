@@ -7,6 +7,8 @@
 {{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" $root "service" $service.name) | trim -}}
 {{- if ne $strategy "standard" }}
 {{- include "eurotransit.requireProgressiveDigest" (dict "service" $service.name "image" $service.values.image) -}}
+{{- $analysisSupported := eq (include "eurotransit.analysisSupported" (dict "root" $root "service" $service.name) | trim) "true" -}}
+{{- $automated := and $root.Values.progressiveDelivery.automatedAnalysis.enabled $analysisSupported -}}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
@@ -53,15 +55,50 @@ spec:
         traefik:
           weightedTraefikServiceName: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-canary-route
       steps:
+        {{- if $automated }}
+        {{- range $weight := $root.Values.progressiveDelivery.automatedAnalysis.canaryWeights }}
+        - setWeight: {{ $weight }}
+        - analysis:
+            templates:
+              - templateName: {{ include "eurotransit.fullname" $root }}-backend-revision-health
+            args:
+              - name: service-name
+                value: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+              - name: pod-template-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
+        {{- end }}
+        {{- else }}
         - setWeight: {{ (index $root.Values.canary $service.name).initialWeight }}
         - pause: {}
         - setWeight: 100
+        {{- end }}
     {{- else }}
     blueGreen:
       activeService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
       previewService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-preview
-      autoPromotionEnabled: false
-      scaleDownDelaySeconds: {{ $root.Values.progressiveDelivery.scaleDownDelaySeconds }}
+      autoPromotionEnabled: {{ $automated }}
+      scaleDownDelaySeconds: {{ ternary $root.Values.progressiveDelivery.blueGreen.scaleDownDelaySeconds $root.Values.progressiveDelivery.scaleDownDelaySeconds $automated }}
+      {{- if $automated }}
+      prePromotionAnalysis:
+        templates:
+          - templateName: {{ include "eurotransit.fullname" $root }}-backend-revision-health
+        args:
+          - name: service-name
+            value: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+          - name: pod-template-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+      postPromotionAnalysis:
+        templates:
+          - templateName: {{ include "eurotransit.fullname" $root }}-backend-revision-health
+        args:
+          - name: service-name
+            value: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+          - name: pod-template-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+      {{- end }}
       activeMetadata:
         labels:
           app.kubernetes.io/track: active
@@ -78,6 +115,7 @@ spec:
 {{- range $service := $blueGreenServices }}
 {{- if $service.enabled }}
 {{- include "eurotransit.requireProgressiveDigest" (dict "service" $service.name "image" $service.values.image) -}}
+{{- $automated := $root.Values.progressiveDelivery.automatedAnalysis.enabled -}}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
@@ -109,8 +147,28 @@ spec:
     blueGreen:
       activeService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
       previewService: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}-preview
-      autoPromotionEnabled: false
-      scaleDownDelaySeconds: {{ $root.Values.progressiveDelivery.scaleDownDelaySeconds }}
+      autoPromotionEnabled: {{ $automated }}
+      scaleDownDelaySeconds: {{ ternary $root.Values.progressiveDelivery.blueGreen.scaleDownDelaySeconds $root.Values.progressiveDelivery.scaleDownDelaySeconds $automated }}
+      {{- if $automated }}
+      prePromotionAnalysis:
+        templates:
+          - templateName: {{ include "eurotransit.fullname" $root }}-backend-revision-health
+        args:
+          - name: service-name
+            value: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+          - name: pod-template-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+      postPromotionAnalysis:
+        templates:
+          - templateName: {{ include "eurotransit.fullname" $root }}-backend-revision-health
+        args:
+          - name: service-name
+            value: {{ include "eurotransit.fullname" $root }}-{{ $service.name }}
+          - name: pod-template-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+      {{- end }}
       activeMetadata:
         labels:
           app.kubernetes.io/track: active
