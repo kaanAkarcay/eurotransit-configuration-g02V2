@@ -110,6 +110,7 @@ k6 run \
   -e AUTH_TOKEN="$AUTH_TOKEN" \
   -e VUS=40 \
   -e DURATION=2m \
+  -e TRAIN_ID=TR-MIL-GEN-20260710-1616 \
   tools/k6/orders-load-shedding.js
 ```
 
@@ -121,6 +122,7 @@ docker run --rm \
   -e AUTH_TOKEN="$AUTH_TOKEN" \
   -e VUS=40 \
   -e DURATION=2m \
+  -e TRAIN_ID=TR-MIL-GEN-20260710-1616 \
   -v "$PWD:/workspace" \
   -w /workspace \
   grafana/k6:latest run tools/k6/orders-load-shedding.js
