@@ -34,6 +34,13 @@ The Orders Deployment renders these values into `SPRING_APPLICATION_JSON`, so Ar
 
 The Payments Deployment also renders `SPRING_APPLICATION_JSON` for the gateway circuit breaker/bulkhead policy and sets `GATEWAY_URL` from Helm values.
 
+Update on 2026-07-16: the current Orders clients use the
+`resilience4j.timelimiter.instances.<client>.timeout-duration` property as the
+source for Reactor Netty connect and response timeouts. The Helm values now set
+that property explicitly for both `inventory-client` and `payments-client` so
+network-latency chaos experiments exercise bounded failures rather than relying
+on image defaults.
+
 ## Bulkhead configuration boundary
 
 This branch now defines the configuration-side bulkhead contract for the three

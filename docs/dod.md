@@ -36,7 +36,7 @@
 - [ ] Graceful degradation: Notifications can be completely down without affecting checkout
 - [ ] Liveness probes do NOT check downstream dependencies
 - [ ] Readiness probes reflect actual ability to serve traffic
-- [ ] PodDisruptionBudget with minAvailable >= 1 for critical-path services
+- [ ] PodDisruptionBudget for critical-path services, sized against the actual replica count so it permits at least one voluntary disruption (`minAvailable: 1` requires replicas >= 2). A PDB reporting `ALLOWED DISRUPTIONS = 0` blocks node drains without protecting availability, so the objects existing is not the bar; prove this with an approved node-drain test (see `docs/resilience/critical-service-pdbs.md`)
 - [ ] HPA configured for at least one service with a meaningful scaling metric
 
 ## Pillar D: Delivery, observability, and proof

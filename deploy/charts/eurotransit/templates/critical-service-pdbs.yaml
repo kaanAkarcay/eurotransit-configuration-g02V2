@@ -1,0 +1,19 @@
+{{- range $service := list "orders" "inventory" "payments" }}
+{{- $config := index $.Values $service }}
+{{- if and $config.pdb $config.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "eurotransit.fullname" $ }}-{{ $service }}
+  labels:
+    app.kubernetes.io/name: {{ $service }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  minAvailable: {{ $config.pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $service }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}
+{{- end }}
