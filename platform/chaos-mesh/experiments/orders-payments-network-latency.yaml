@@ -1,0 +1,48 @@
+# Purpose: one-shot Chaos Mesh experiment for tuning the Orders -> Payments
+# circuit breaker under latency that exceeds Orders' configured payment timeout.
+# Hypothesis: while checkout load is active, adding 7s network latency from
+# Orders to Payments causes the `payments-client` circuit breaker to record
+# timeout failures and open after the configured minimum sample size is reached.
+# Prerequisites: Chaos Mesh CRDs installed, Orders image with programmatic
+# `payments-client` circuit breaker deployed, and Helm config setting
+# `resilience4j.timelimiter.instances.payments-client.timeout-duration`.
+# Metrics: `resilience4j_circuitbreaker_state`, failed/not-permitted call
+# counts for `payments-client`, Orders `POST /api/v1/orders` latency/statuses,
+# order terminal-state convergence, and Orders/Payments pod restart counters.
+# Rollback: this one-shot object has `duration: 60s`; delete it early with
+# `kubectl -n chaos-mesh delete networkchaos orders-payments-network-latency`.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: orders-payments-network-latency
+  namespace: chaos-mesh
+  labels:
+    app.kubernetes.io/name: chaos-experiment
+    app.kubernetes.io/part-of: eurotransit
+    eurotransit.io/experiment: orders-payments-network-latency
+  annotations:
+    eurotransit.io/status: manual
+    eurotransit.io/auto-execute: "false"
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - eurotransit
+    labelSelectors:
+      app.kubernetes.io/name: orders
+      app.kubernetes.io/instance: eurotransit
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - eurotransit
+      labelSelectors:
+        app.kubernetes.io/name: payments
+        app.kubernetes.io/instance: eurotransit
+  delay:
+    latency: 7s
+    correlation: "100"
+    jitter: 0ms
+  duration: 60s
