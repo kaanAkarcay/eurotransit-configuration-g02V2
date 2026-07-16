@@ -7,6 +7,18 @@
 # surfaced: @EnableScheduling was missing from Orders entirely, silently
 # no-opping every @Scheduled method (including the pre-existing outbox
 # relay poller).
+#
+# §4.1 revalidated under real load 2026-07-16, per the contract's own
+# "Open risk" note authorizing exactly this: 10 real CONFIRMED orders ranged
+# 1.17s-5.36s, so 800ms was never achievable - the saga crosses Orders'
+# once-per-second outbox poll 3 times (order-placed -> inventory-reserved ->
+# payment-authorized -> order-confirmed), each hop able to wait up to ~1s for
+# the next tick before any actual work starts. Retargeted to the ~7.16s
+# bucket (le="7.158278826") already present from Micrometer's default
+# publishPercentileHistogram() buckets - comfortable headroom above the
+# observed range without a code change/rebuild, since serviceLevelObjectives
+# only controls which bucket boundary the plain-ratio SLI reads from, not
+# which boundaries exist.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -30,14 +42,15 @@ spec:
             sum(rate(http_server_requests_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", uri="/api/v1/orders", method="POST"}[5m]))
 
         # SLI for contract §4.1: fraction of orders reaching CONFIRMED
-        # within 800ms, over a 5m window. Uses the exact 800ms
-        # serviceLevelObjectives() bucket (le="0.8") rather than
-        # histogram_quantile(0.99, ...), so this is a plain ratio - directly
-        # comparable to an error budget the same way §4.2 is, instead of a
-        # percentile point-estimate compared against a threshold.
+        # within ~7.16s (revalidated 2026-07-16 - see file header), over a
+        # 5m window. Uses a real histogram bucket (le="7.158278826") rather
+        # than histogram_quantile(0.99, ...), so this is a plain ratio -
+        # directly comparable to an error budget the same way §4.2 is,
+        # instead of a percentile point-estimate compared against a
+        # threshold.
         - record: eurotransit:orders_confirmation_latency_slo:ratio_rate5m
           expr: |
-            sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="0.8"}[5m]))
+            sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="7.158278826"}[5m]))
             /
             sum(rate(orders_confirmation_latency_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders"}[5m]))
 
@@ -82,15 +95,16 @@ spec:
             summary: "Orders gateway success rate SLO - slow burn"
             description: "POST /api/v1/orders error rate has been burning the 99.5% success-rate error budget at >3x over the last 1h. Contract §4.2/§4.4: create a ticket."
 
-        # Objective is 99% of orders confirmed within 800ms (1% error
-        # budget). Same fast/slow burn-rate pattern and multipliers as
-        # §4.2, just against the latency-SLI ratio instead of the
-        # success-rate ratio.
+        # Objective is 99% of orders confirmed within ~7.16s (revalidated
+        # 2026-07-16 from the contract's original 800ms target - see file
+        # header; 1% error budget). Same fast/slow burn-rate pattern and
+        # multipliers as §4.2, just against the latency-SLI ratio instead of
+        # the success-rate ratio.
         - alert: OrdersConfirmationLatencyFastBurn
           expr: |
             (
               1 - (
-                sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="0.8"}[5m]))
+                sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="7.158278826"}[5m]))
                 /
                 sum(rate(orders_confirmation_latency_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders"}[5m]))
               )
@@ -102,13 +116,13 @@ spec:
             burn: fast
           annotations:
             summary: "Orders confirmation latency SLO - fast burn"
-            description: "Fewer orders than the 99% budget allows are reaching CONFIRMED within 800ms, burning the error budget at >14.4x over the last 5m. Contract §4.1/§4.4: page immediately."
+            description: "Fewer orders than the 99% budget allows are reaching CONFIRMED within ~7.16s, burning the error budget at >14.4x over the last 5m. Contract §4.1/§4.4: page immediately."
 
         - alert: OrdersConfirmationLatencySlowBurn
           expr: |
             (
               1 - (
-                sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="0.8"}[1h]))
+                sum(rate(orders_confirmation_latency_seconds_bucket{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders", le="7.158278826"}[1h]))
                 /
                 sum(rate(orders_confirmation_latency_seconds_count{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-orders"}[1h]))
               )
@@ -120,7 +134,7 @@ spec:
             burn: slow
           annotations:
             summary: "Orders confirmation latency SLO - slow burn"
-            description: "Orders reaching CONFIRMED within 800ms has been below the 99% budget, burning the error budget at >3x over the last 1h. Contract §4.1/§4.4: create a ticket."
+            description: "Orders reaching CONFIRMED within ~7.16s has been below the 99% budget, burning the error budget at >3x over the last 1h. Contract §4.1/§4.4: create a ticket."
 
         # §4.3 is deliberately NOT a burn-rate alert like the two above.
         # orders_pending_stale_count is a point-in-time gauge (how many

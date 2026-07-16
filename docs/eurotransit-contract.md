@@ -418,13 +418,13 @@ This does not weaken the consistency model in §3.1: the business decision (e.g.
 
 ### 4.1 Latency SLO
 
-**Objective**: 99% of orders reach CONFIRMED within 800ms of creation, measured over a 5-minute rolling window.
+**Objective**: 99% of orders reach CONFIRMED within ~7.16s of creation, measured over a 5-minute rolling window.
 
 **SLI**: `confirmed_at - created_at` for each order that reaches CONFIRMED. Computed by Orders when it writes the final status update.
 
-**Error budget**: over 1000 orders in 5 minutes, up to 10 can exceed 800ms.
+**Error budget**: over 1000 orders in 5 minutes, up to 10 can exceed ~7.16s.
 
-**Open risk — needs load-test validation**: the critical path is Orders' own four Kafka-driven stages (`order-placed` → `inventory-reserved` → `payment-authorized`/`payment-failed` → `order-confirmed`/`order-failed`), each a self-consumption round trip, **plus** two real synchronous HTTP calls embedded inside those stages (Orders→Inventory, Orders→Payments) and one more inside Payments (Payments→gateway). That's more hops than a single direct call, layering Kafka producer/broker/consumer latency on top of network round-trip time for each sync call. Keep 800ms as the target, but validate it under load once the pipeline is running, before wiring burn-rate alerts around it — if it's not achievable, revisit with real numbers rather than a guess. Tune consumer poll settings (e.g. low `fetch.min.bytes`/`linger.ms`) and the sync calls' timeout budgets if the combination pushes latency over budget.
+**Revalidated under real load 2026-07-16**: the original 800ms target was never achievable. 10 real CONFIRMED orders measured 1.17s–5.36s end to end. Root cause: the critical path crosses Orders' own once-per-second outbox poll (`OutboxRelay`, `fixedDelay = 1000`) three times (`order-placed` → `inventory-reserved` → `payment-authorized`/`payment-failed` → `order-confirmed`/`order-failed`), each hop able to wait up to ~1s for the next poll tick before any work starts, on top of the two real synchronous HTTP calls embedded inside those stages (Orders→Inventory, Orders→Payments) and one more inside Payments (Payments→gateway). Retargeted to ~7.16s — a real Micrometer histogram bucket already present from `publishPercentileHistogram()`'s default buckets (`le="7.158278826"`), giving headroom above the observed range without needing a code change. If the outbox poll interval is later reduced (e.g. 1000ms → 200-300ms), this budget should be revisited downward with fresh real numbers rather than left stale.
 
 ### 4.2 Gateway success rate SLO
 

@@ -1,5 +1,49 @@
 # Imported Grafana dashboards
 
+## Datasources
+
+### Zipkin (distributed tracing)
+
+- Added live via Grafana's API (`POST /api/datasources`), not a ConfigMap -
+  this project's dashboards/datasources aren't sidecar-provisioned (see "How
+  to import" below), so this matches that same manual-but-documented
+  convention rather than introducing a new one.
+- `name: Zipkin`, `type: zipkin`, `access: proxy`,
+  `url: http://eurotransit-zipkin.eurotransit.svc.cluster.local:9411`
+  (the Service the `zipkin.yaml` chart template creates in the `eurotransit`
+  namespace - Grafana itself runs in `monitoring`, but `access: proxy` means
+  the *Grafana pod*, not the browser, makes the request, so cross-namespace
+  ClusterIP DNS resolves fine).
+- To recreate on a fresh cluster/Grafana instance:
+  ```
+  kubectl exec -n monitoring deploy/kube-prometheus-stack-grafana -c grafana -- \
+    curl -s -u <user>:<pass> -X POST -H "Content-Type: application/json" \
+    -d '{"name":"Zipkin","type":"zipkin","access":"proxy","url":"http://eurotransit-zipkin.eurotransit.svc.cluster.local:9411","isDefault":false}' \
+    http://localhost:3000/api/datasources
+  ```
+
+## EuroTransit - Orders SLO / Error Budget
+
+- **File:** `platform/observability/dashboards/eurotransit-orders-slo.json`
+- **Datasource:** Prometheus (kube-prometheus-stack)
+- **What it shows:** all 3 contract §4 SLOs for Orders - gateway success
+  rate vs the 99.5% objective, confirmation latency vs the 99% objective,
+  and pipeline-completion staleness - each paired with an error-budget-
+  consumed gauge (% of the 5-minute budget used), a table of currently
+  firing SLO burn-rate alerts, and a raw order-volume panel for context.
+- **Confirmation latency budget note:** the panel title/description
+  reference ~7.16s, not the contract's original 800ms - see
+  `eurotransit-contract.md` §4.1, revalidated 2026-07-16 against real
+  order timings (1.17s-5.36s across 10 orders). If that budget changes
+  again, update `orders_confirmation_latency_slo:ratio_rate5m`'s `le`
+  value here to match `prometheusrule-slo.yaml`.
+- **Verified against live data:** every panel's query run directly against
+  Prometheus. The two ratio SLIs returned `NaN` at verification time (0/0 -
+  no order traffic in the preceding 5m window, not a broken query); the
+  `ALERTS` table panel correctly returned the live-firing
+  `OrdersPipelineCompletionStalePending` alert, and the stale-count panel
+  correctly returned the real count (35) of orders stuck past budget.
+
 ## EuroTransit - RED Signals per Service
 
 - **File:** `platform/observability/dashboards/eurotransit-red-signals.json`

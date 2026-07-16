@@ -421,6 +421,29 @@ notifications:
   service:
     type: ClusterIP
     port: 8080
+zipkin:
+  # Distributed tracing backend for the money path (Frontend -> Orders ->
+  # Inventory/Payments, plus the order-placed/inventory-reserved/
+  # payment-authorized/order-confirmed Kafka hops). zipkin-slim skips the
+  # Elasticsearch/Cassandra/Kafka storage backends we don't need - single
+  # pod, in-memory span storage, fine for this project's traffic and node
+  # capacity.
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: openzipkin/zipkin-slim
+    tag: "3.4"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 384Mi
+  service:
+    type: ClusterIP
+    port: 9411    
 imagePullSecrets:
   - name: acr-secret
 keycloak:

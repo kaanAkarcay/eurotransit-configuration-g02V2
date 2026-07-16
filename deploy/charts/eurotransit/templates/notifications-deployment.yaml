@@ -66,6 +66,9 @@ spec:
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "eurotransit-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+
+            - name: ZIPKIN_ENDPOINT
+              value: "http://{{ include "eurotransit.fullname" . }}-zipkin:9411/api/v2/spans"
             # Secret created out of band (kubectl create secret generic
             # notifications-smtp --from-literal=username=... --from-literal=password=...)
             # - a Gmail App Password, not a real account password, so it's

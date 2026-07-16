@@ -1,0 +1,201 @@
+{
+  "title": "EuroTransit - Orders SLO / Error Budget",
+  "description": "Contract §4 SLOs for Orders: gateway success rate, confirmation latency, and pipeline-completion staleness, plus how much of each error budget is currently consumed.",
+  "schemaVersion": 36,
+  "version": 1,
+  "editable": true,
+  "tags": ["eurotransit", "slo"],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Gateway Success Rate vs 99.5% Objective (§4.2)",
+      "description": "POST /api/v1/orders non-5xx ratio over 5m. Red line is the 99.5% objective - anything below it is consuming error budget.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "eurotransit:orders_gateway_success_rate:ratio_rate5m * 100",
+          "legendFormat": "success rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 99,
+          "max": 100,
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 99.5 }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Gateway Success Rate - Error Budget Consumed",
+      "description": "(1 - success rate) / 0.5% allowed error rate, as a percentage of the 5-minute error budget. 100% = the whole budget for this window is used up; over 100% = burning faster than the budget allows.",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "(1 - eurotransit:orders_gateway_success_rate:ratio_rate5m) / 0.005 * 100",
+          "legendFormat": "budget consumed",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 200,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Active Orders SLO Burn-Rate Alerts",
+      "description": "Any of the four burn-rate alerts (§4.4) currently firing.",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "ALERTS{slo=~\"orders.*\", alertstate=\"firing\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Confirmation Latency vs 99% Objective (§4.1, ~7.16s budget)",
+      "description": "Fraction of orders reaching CONFIRMED within ~7.16s over 5m. Red line is the 99% objective. Revalidated 2026-07-16 from the original 800ms target, which was never achievable given Orders' 1s outbox poll crossed 3 times per saga - see eurotransit-contract.md §4.1.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "eurotransit:orders_confirmation_latency_slo:ratio_rate5m * 100",
+          "legendFormat": "within budget",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 95,
+          "max": 100,
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 99 }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Confirmation Latency - Error Budget Consumed",
+      "description": "(1 - within-budget ratio) / 1% allowed miss rate, as a percentage of the 5-minute error budget.",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "(1 - eurotransit:orders_confirmation_latency_slo:ratio_rate5m) / 0.01 * 100",
+          "legendFormat": "budget consumed",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 200,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Orders Stuck Past 30s Pipeline-Completion Budget (§4.3)",
+      "description": "Point-in-time count of PENDING orders older than the 30s budget. Any non-zero value is a real, ongoing violation - not a ratio/burn-rate SLI like the two above.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "orders_pending_stale_count{namespace=\"eurotransit\"}",
+          "legendFormat": "stale pending count",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Orders Confirmed / Failed (rate, for context)",
+      "description": "Raw order-outcome volume behind the ratios above - useful to sanity-check whether a ratio swing is real signal or just low sample size.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(orders_confirmation_latency_seconds_count{namespace=\"eurotransit\"}[5m])) * 60",
+          "legendFormat": "orders confirmed / min",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    }
+  ]
+}

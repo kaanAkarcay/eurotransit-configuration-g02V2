@@ -68,6 +68,9 @@ spec:
             failureThreshold: 24
 
           env:
+            - name: ZIPKIN_ENDPOINT
+              value: "http://{{ include "eurotransit.fullname" . }}-zipkin:9411/api/v2/spans"
+
             - name: STRIPE_ENABLED
               value: "{{ $gw.stripe.enabled }}"
 

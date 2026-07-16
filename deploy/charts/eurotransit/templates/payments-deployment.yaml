@@ -71,6 +71,9 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "postgres"
 
+            - name: ZIPKIN_ENDPOINT
+              value: "http://{{ include "eurotransit.fullname" . }}-zipkin:9411/api/v2/spans"
+
             - name: SPRING_R2DBC_URL
               value: "r2dbc:postgresql://payments-db-rw.eurotransit.svc.cluster.local:5432/payments_db"
 
