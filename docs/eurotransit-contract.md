@@ -77,6 +77,17 @@ Response `409 Conflict` (duplicate idempotency_key):
 }
 ```
 
+Response `429 Too Many Requests` (load shedding):
+
+- Empty body.
+- Header: `Retry-After: <seconds>`.
+
+Orders sheds inbound order creation above the configured concurrency limit
+(`app.backpressure.orders.max-concurrent-requests`) rather than queueing work it
+cannot complete. Clients should retry after `Retry-After` seconds. This is
+deliberately non-5xx and therefore does not consume the §4.2 success-rate error
+budget.
+
 Idempotency: Orders checks the `idempotency_key` against its `processed_requests` table. If already seen, it returns the existing order. This deduplicates the frontend (user clicking "buy" twice).
 
 ### 1.3 Orders — poll order status (public via Traefik)
