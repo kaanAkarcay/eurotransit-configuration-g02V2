@@ -50,10 +50,13 @@ progressiveDelivery:
       - 25
       - 50
       - 100
-    # At 60 public requests/minute, a 10% Canary expects about 30 requests in
-    # five minutes. Requiring 15 tolerates routing variance while rejecting a
-    # statistically empty stage.
+    # Generic backend threshold (Catalog). Orders uses direct candidate
+    # traffic and the lower service-specific threshold below.
     minimumRequests: 15
+    # Orders Rollout traffic runs directly against the candidate at 2 RPM.
+    # Five committed orders per five-minute stage leaves one full scrape
+    # interval of scheduling tolerance while limiting each 25m run to 50 sagas.
+    ordersMinimumRequests: 5
     maximumP95LatencySeconds: 0.5
     # Fail on the first bad, inconclusive, or provider-error measurement.
     failureLimit: 0

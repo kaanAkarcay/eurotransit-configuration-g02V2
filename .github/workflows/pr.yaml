@@ -85,6 +85,7 @@ jobs:
               values_args+=(
                 --set deploymentStrategies.frontend=canary
                 --set frontend.image.digest="$dummy_digest"
+                --set progressiveDelivery.automatedAnalysis.services.frontend.enabled=false
                 --set deploymentStrategies.catalog=blueGreen
                 --set catalog.image.digest="$dummy_digest"
                 --set blueGreen.payments.enabled=true
