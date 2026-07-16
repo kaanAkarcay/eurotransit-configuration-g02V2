@@ -224,7 +224,7 @@ does not promise an automatic rollback. An authorized operator must inspect the
 Rollout, then explicitly promote, retry or abort it. Manual pauses are an
 intentional part of the strategy and are not a metric-based rollback policy.
 
-The configured sequence is:
+With analysis disabled for that service, the configured sequence is:
 
 1. set candidate traffic to `canary.<service>.initialWeight` (default 10%);
 2. pause indefinitely;
@@ -240,6 +240,12 @@ During the pause, validate at least:
 - for Orders, order acceptance and completion without duplicate side effects.
 
 Use controlled synthetic traffic if natural traffic is too low to make the 10% sample meaningful.
+
+With Catalog analysis explicitly enabled, Canary instead executes
+`10 -> 5m analysis -> 25 -> 5m analysis -> 50 -> 5m analysis -> 100 -> 5m analysis`.
+Every weight is strictly increasing and the final 100% stage is validated by
+Helm. A stage with fewer than 15 non-actuator candidate requests fails; it does
+not promote merely because the candidate was quiet.
 
 Promote through the Argo CD Rollout `resume` action or, if the plugin is installed:
 
@@ -257,7 +263,9 @@ Promotion and abort mutate live Rollout state and therefore require operator aut
 
 ## Blue/Green operation
 
-When the candidate becomes ready, the Rollout remains paused because `autoPromotionEnabled: false`. Test the preview Service without changing production traffic.
+When automated analysis is disabled for the service, the Rollout remains paused
+because `autoPromotionEnabled: false`. Test the preview Service without changing
+production traffic.
 
 Example local tunnel for a backend preview:
 
@@ -277,7 +285,20 @@ Abort if checks fail:
 kubectl argo rollouts abort eurotransit-inventory -n eurotransit
 ```
 
-After promotion, the old active ReplicaSet remains scaled for 30 minutes. A Git revert to a revision inside the configured rollback window is fast-tracked by Argo Rollouts.
+When automated analysis is enabled for Catalog, Inventory, or Payments, the
+preview must receive real non-actuator application traffic throughout its
+five-minute pre-promotion analysis. Readiness probes alone do not satisfy the
+request-volume gate. Start the matching application traffic script against the
+`*-preview` Service before the AnalysisRun window begins and keep it running
+until the run completes. Inventory and Payments business traffic is
+state-changing, so use only the explicit low-rate/idempotent modes and their
+safety acknowledgements documented in the application repository.
+
+With automated analysis enabled, the old active ReplicaSet remains scaled for
+20 minutes. This is longer than the complete five-minute post-promotion analysis
+plus the configured ten-minute provider/operator safety margin. Manual
+Blue/Green retains the general 30-minute delay. A Git revert to a revision
+inside the configured rollback window is fast-tracked by Argo Rollouts.
 
 ## Returning to standard
 
@@ -317,96 +338,88 @@ Stable and candidate versions share production dependencies. No separate databas
 - Payments preview tests use safe/idempotent requests and the existing gateway policy.
 - Notifications remains rolling; the current implementation logs notification activity rather than sending real email.
 
-## Automated analysis status
+## Automated metric-driven analysis
 
-Automatic metric promotion is intentionally not enabled. The cluster currently has monitoring CRDs, but Prometheus was observed at zero replicas and there is no validated stable-versus-candidate PromQL contract.
+The chart contains a fail-closed, reusable Argo Rollouts AnalysisTemplate, but
+automation is opt-in per service:
 
-Before adding an `AnalysisTemplate`:
+| Service | Can be enabled | Reason/default |
+|---|---:|---|
+| Frontend | No | no revision-attributable application request telemetry |
+| Catalog | Yes | disabled until live Prometheus query verification |
+| Orders | No | HTTP handling cannot attribute completion of the full money path to the candidate revision |
+| Inventory | Yes, Blue/Green only | disabled until live Prometheus query verification |
+| Payments | Yes, Blue/Green only | disabled until live Prometheus query verification |
 
-1. restore and validate Prometheus;
-2. define queries using the stable/candidate track labels;
-3. test success thresholds with a healthy candidate;
-4. test failure thresholds with a deliberately broken candidate;
-5. make missing/empty data fail or pause, never pass;
-6. define minimum sample sizes and an inconclusive/manual path.
+The JSON schema and Helm validation both reject `frontend.enabled=true` and
+`orders.enabled=true`. They also reject enabling a supported service unless its
+matching progressive strategy is active. There is no global switch that can
+silently automate every Rollout.
 
-Until then, promotion is manual and evidence-based.
+For each stage, the shared template enforces one complete five-minute
+observation window:
+
+- at least 15 non-actuator candidate requests over the full window;
+- zero candidate HTTP 5xx responses;
+- p95 candidate HTTP latency at or below 500 ms;
+- zero candidate container restarts;
+- candidate readiness sampled every 15 seconds for the full window.
+
+Volume, errors, latency, and restarts are evaluated once after five minutes.
+Readiness is sampled 20 times. Empty, missing, NaN, bad, inconclusive, or
+provider-error results fail on the first measurement. The request-volume query
+does not synthesize zero into a successful result; the 5xx query may use zero
+only after the independent request-volume gate proves candidate telemetry
+exists.
+
+The live Prometheus scrape configuration was inspected directly. It exposes the
+`service` and `pod` target labels, but did not copy
+`app.kubernetes.io/track` into a Prometheus label despite the ServiceMonitor
+setting. Queries therefore correlate the candidate through Argo's
+`podTemplateHashValue: Latest`, the verified `pod` label, and the active
+Service/preview Service label. No live query result is claimed: the Prometheus
+CR was observed with zero desired replicas on 2026-07-16.
+
+Before enabling one supported service, restore Prometheus, verify its targets,
+send controlled application traffic to the exact candidate destination, and
+execute every rendered query against that traffic. Keep the Git default false
+until healthy, empty, low-volume, 5xx, high-latency, restart, not-ready, and
+provider-error cases have been observed.
+
+Example Catalog opt-in after that validation:
+
+```yaml
+deploymentStrategies:
+  catalog: canary
+
+progressiveDelivery:
+  automatedAnalysis:
+    services:
+      catalog:
+        enabled: true
+```
+
+Blue/Green runs the same complete analysis against preview before promotion and
+active after promotion. `autoPromotionEnabled` becomes true only for the
+explicitly enabled service. The old ReplicaSet is retained for 1200 seconds;
+Helm rejects a value that is not greater than analysis duration plus
+`postPromotionSafetyMarginSeconds`.
+
+Do not edit a live Rollout to bypass this GitOps contract. Emergency
+promotion/abort/retry commands remain operator-controlled and cluster-mutating.
 
 ## Local validation only
 
-Default rendering must contain zero progressive resources:
+These commands render locally and do not apply anything to the cluster:
 
 ```powershell
 helm lint deploy/charts/eurotransit
 helm template eurotransit deploy/charts/eurotransit --namespace eurotransit
+./deploy/charts/eurotransit/tests/validate-analysis.ps1
 ```
 
-The five progressive-capable services already have valid stable digests, so an
-activation simulation needs only a temporary strategy override:
-
-```powershell
-helm template eurotransit deploy/charts/eurotransit `
-  --namespace eurotransit `
-  --set deploymentStrategies.orders=canary
-```
-
-Also render every supported single mode and at least one mixed configuration. Verify resource names, Service ports, selectors, Ingress path exclusivity, sync waves, and the absence of duplicate Kubernetes identities. These commands render locally; they do not apply anything to the cluster.
-# Automated metric-driven analysis
-
-The chart supports fail-closed Argo Rollouts analysis for backend Canary and
-Blue/Green releases. It is intentionally disabled by default because the live
-Prometheus CR was observed with zero desired replicas on 2026-07-16. Enabling
-automation before Prometheus is healthy would make every AnalysisRun error and
-abort or pause the release.
-
-Set `progressiveDelivery.automatedAnalysis.enabled=true` only after validating
-the Prometheus targets and queries with real synthetic traffic. Canary then runs
-`10 -> analysis -> 25 -> analysis -> 50 -> analysis -> 100 -> final analysis`.
-Each inline run blocks progression. A failed run aborts the Canary and restores
-traffic to stable; an inconclusive run pauses for operator action.
-
-The shared backend AnalysisTemplate requires, for the configured five-minute
-window:
-
-- at least 5 non-actuator requests in every one-minute query window (compatible
-  with roughly 60 public requests/minute at the initial 10% Canary weight);
-- zero candidate HTTP 5xx responses;
-- p95 HTTP latency at or below 500 ms;
-- zero candidate container restarts;
-- all candidate pods Ready.
-
-Empty, missing, NaN, or provider-error results never count as success.
-`failureLimit`, `inconclusiveLimit`, and `consecutiveErrorLimit` are all explicit
-and default to one.
-
-The live Prometheus scrape configuration was inspected directly. It exposes the
-`service` and `pod` target labels, but does not copy
-`app.kubernetes.io/track` into a Prometheus label despite the ServiceMonitor
-setting. Queries therefore identify the candidate with Argo's
-`podTemplateHashValue: Latest` and the verified `pod` label. They do not assume a
-sanitized track label exists.
-
-Blue/Green uses the same template against `preview` before promotion and
-`active` after promotion. `autoPromotionEnabled` becomes true only when
-automation is enabled. The old ReplicaSet is retained for 900 seconds by
-default, longer than the five-minute post-promotion run. Argo Rollouts cannot
-make scale-down itself conditional on an arbitrary metric after that timer; a
-post-promotion failure aborts while the old ReplicaSet is still available.
-
-Frontend automation remains disabled even when the global flag is enabled.
-Static nginx currently exposes no trustworthy stable/candidate request metrics,
-and live Prometheus/Traefik metrics could not be validated while Prometheus was
-scaled to zero. Frontend therefore keeps the existing manual pause/promotion
-flow until per-track telemetry is added and verified.
-
-The current Catalog rollout is paused at 10%. Do not enable automated analysis
-by editing its live Rollout. First use the emergency runbook to deliberately
-promote the known-good candidate or abort it, wait for a steady state, restore
-Prometheus, validate candidate queries, then enable the GitOps value in a
-reviewed PR. Manual emergency operations remain:
-
-```text
-kubectl argo rollouts abort eurotransit-catalog -n eurotransit
-kubectl argo rollouts retry rollout eurotransit-catalog -n eurotransit
-kubectl argo rollouts undo eurotransit-catalog -n eurotransit
-```
+The test script renders supported opt-ins, checks the PromQL shape and
+five-minute timing, rejects invalid durations/weights/delays and unsupported
+services, and evaluates healthy/failing result fixtures. CI additionally renders
+every supported strategy and validates the generated Kubernetes resources with
+kubeconform.

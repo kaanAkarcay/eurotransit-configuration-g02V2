@@ -373,10 +373,14 @@ first revision does not execute update steps.
 Canary is used only on the existing public Frontend, Catalog and Orders routes.
 Traefik weights are controlled by Argo Rollouts. Blue/Green keeps the existing
 Service as the active endpoint and creates a preview Service; Inventory and
-Payments receive no Ingress route. Promotion is manual until Prometheus and the
-stable-versus-candidate metric contract have been validated with healthy and
-deliberately faulty candidates. See `docs/deployment-strategies.md` for the
-activation, promotion, abort and return-to-standard procedure.
+Payments receive no Ingress route. Metric-driven promotion is fail-closed and
+opt-in per service: Catalog, Inventory, and Payments can use the shared
+five-minute AnalysisTemplate only after live Prometheus verification. Frontend
+and Orders remain technically blocked from automation because their current
+telemetry cannot reliably attribute application behavior/the complete money path
+to the candidate revision. See `docs/deployment-strategies.md` for the
+activation, traffic, analysis, promotion, abort and return-to-standard
+procedure.
 ```
 
 ### Config repo structure

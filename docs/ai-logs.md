@@ -2127,3 +2127,52 @@ Medium
 **Notes**
 
 No live rollout was promoted, aborted, patched, or synchronized.
+
+---
+
+### 2026-07-16 18:30
+
+**Agent**
+
+OpenAI Codex
+
+**Task**
+
+Correct the metric-driven progressive analysis PR after review.
+
+**Files Modified**
+
+- `deploy/charts/eurotransit/templates/_helpers.tpl`
+- `deploy/charts/eurotransit/templates/analysis-templates.yaml`
+- `deploy/charts/eurotransit/templates/progressive-rollouts.yaml`
+- `deploy/charts/eurotransit/values.yaml`
+- `deploy/charts/eurotransit/values.schema.json`
+- `deploy/charts/eurotransit/tests/*`
+- `.github/workflows/pr.yaml`
+- `docs/architecture-design.md`
+- `docs/deployment-strategies.md`
+- `docs/ai-mistakes.md`
+- `docs/agent-log.md`
+
+**Summary**
+
+Replaced global automation with fail-closed per-service opt-in, technically
+blocked Frontend and Orders, corrected PromQL, required complete five-minute
+samples and real preview application traffic, validated Canary weights and
+Blue/Green retention, and added positive/negative CI fixtures.
+
+**Potential Risks**
+
+Prometheus remains unavailable for live query execution. Supported automation
+therefore remains disabled until targets and all rendered queries are verified
+with controlled candidate traffic.
+
+**Confidence**
+
+High for chart rendering and fail-closed validation; medium for runtime metric
+behavior until Prometheus is restored.
+
+**Notes**
+
+Only local rendering and read-only cluster inspection were used. No live
+Rollout or Argo CD state was changed.
