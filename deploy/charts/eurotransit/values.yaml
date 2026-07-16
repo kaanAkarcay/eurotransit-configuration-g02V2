@@ -344,7 +344,7 @@ notifications:
     repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
     tag: latest
     pullPolicy: Always
-  restartedAt: "2026-07-15T15:13:13Z-4fa375062d38ec8d6f5163ff0298d65418178ba8"
+  restartedAt: "2026-07-16T11:04:16Z-f3ee5e786aa9c0a8556654c4cdd2768971697eb4"
   # Re-measured 2026-07-15: actual usage steady at ~219Mi, so 320Mi/640Mi left
   # ~2.9x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   resources:
