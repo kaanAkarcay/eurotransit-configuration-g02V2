@@ -104,7 +104,7 @@ frontend:
     digest: ""
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
-  restartedAt: "unset"
+  restartedAt: "2026-07-16T15:43:46Z-089edd665c64af9f40cb6ef58f7146391443e47f"
   # Static nginx, tiny footprint. Set explicitly - an unset resources block
   # leaves the pod BestEffort, invisible to the scheduler's placement math,
   # which is exactly what let every app service pile onto one already-full
