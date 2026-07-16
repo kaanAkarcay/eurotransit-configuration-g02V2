@@ -119,7 +119,12 @@ spec:
             - name: ORDERS_JWT_AUDIENCE
               value: "{{ .Values.orders.security.jwt.audience }}"
 
-            - name: INVENTORY_SERVICE_TOKEN_ENABLED
+            # Must be SERVICE_TOKEN_ENABLED, not INVENTORY_SERVICE_TOKEN_ENABLED:
+            # application.yaml reads app.security.service-token.enabled via the
+            # explicit placeholder ${SERVICE_TOKEN_ENABLED:false} - the old name
+            # never bound to that property, so the toggle was silently always
+            # false regardless of this value.
+            - name: SERVICE_TOKEN_ENABLED
               value: "{{ .Values.orders.security.serviceToken.inventory.enabled }}"
 
             {{- if .Values.orders.security.serviceToken.inventory.enabled }}
