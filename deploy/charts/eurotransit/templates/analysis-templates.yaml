@@ -130,12 +130,20 @@ spec:
       failureLimit: 0
       inconclusiveLimit: 0
       consecutiveErrorLimit: 0
-      successCondition: len(result) == 1 && result[0] >= {{ $analysis.minimumRequests }}
+      successCondition: len(result) == 1 && result[0] >= {{ $analysis.ordersMinimumRequests }}
       provider:
         prometheus:
           address: {{ $analysis.prometheusAddress }}
           query: |
-            sum(increase(eurotransit_orders_requests_accepted_total{
+            sum(increase(eurotransit_orders_requests_accepted_new_total{
+              namespace="{{ .Values.namespace }}",
+              service=~"{{`{{args.service-name}}`}}(-canary|-preview)?",
+              pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*"
+            }[{{ $analysis.duration }}]))
+            or
+            # Transition fallback for the image that predates the committed
+            # new-order counter. outbox_created excludes idempotent replays.
+            sum(increase(eurotransit_orders_outbox_created_total{
               namespace="{{ .Values.namespace }}",
               service=~"{{`{{args.service-name}}`}}(-canary|-preview)?",
               pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*"
@@ -178,7 +186,11 @@ spec:
               status=~"5..",
               uri!~"/actuator.*"
             }[{{ $analysis.safetyQueryWindow }}]))
-            or (0 * sum(increase(eurotransit_orders_requests_accepted_total{
+            or (0 * sum(increase(eurotransit_orders_requests_accepted_new_total{
+              namespace="{{ .Values.namespace }}",
+              pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*"
+            }[{{ $analysis.safetyQueryWindow }}])))
+            or (0 * sum(increase(eurotransit_orders_outbox_created_total{
               namespace="{{ .Values.namespace }}",
               pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*"
             }[{{ $analysis.safetyQueryWindow }}])))
