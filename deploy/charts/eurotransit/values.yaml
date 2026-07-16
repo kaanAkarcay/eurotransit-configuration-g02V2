@@ -69,7 +69,7 @@ catalog:
     # today's CI/CD flow. requireProgressiveDigest already fails the render if
     # this service is switched to canary/blueGreen without a real digest here -
     # populate it only at that point, not as a standing default.
-    digest: ""
+    digest: "sha256:83bbb96376e6bbd30d4094847f992bfc7feca39e30ea3e748e23bcd8e6a9a7e8"
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
   restartedAt: "2026-07-12T17:07:48Z-0d700ea85074077403745c197b085d2342d563ee"
