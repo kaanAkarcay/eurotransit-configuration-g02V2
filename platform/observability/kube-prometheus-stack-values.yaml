@@ -27,10 +27,13 @@ prometheus:
     podMonitorNamespaceSelector: {}
     ruleNamespaceSelector: {}
 
+    # Trimmed live to 340Mi (from this chart's default 512Mi) based on
+    # observed real usage - kept here so this file matches the live CR
+    # instead of drifting from a kubectl patch made outside Helm.
     resources:
       requests:
         cpu: 100m
-        memory: 512Mi
+        memory: 340Mi
       limits:
         cpu: 500m
         memory: 1Gi
@@ -83,6 +86,16 @@ kubeControllerManager:
   enabled: false
 
 kubeScheduler:
+  enabled: false
+
+# Unlike the three above, this target isn't broken - it scrapes fine, which is
+# exactly the problem: apiserver's own /metrics exposes its request/response
+# histograms (apiserver_request_duration_seconds_bucket etc.) AND its internal
+# etcd-client instrumentation (etcd_request_duration_seconds_bucket), together
+# ~25k of the ~82k total active series measured 2026-07-16. None of it is
+# app-level (the RED/SLO dashboards only scrape the 6 EuroTransit services) -
+# pure control-plane overhead this project isn't graded on.
+kubeApiServer:
   enabled: false
 
 # You can enable ingress resource for each component of the stack. For example:

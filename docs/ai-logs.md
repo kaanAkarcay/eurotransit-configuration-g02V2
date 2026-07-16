@@ -5,6 +5,44 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-16 00:24
+
+**Agent**
+
+Codex GPT-5
+
+**Task**
+
+Add explicit resource requests/limits for Chaos Mesh `chaos-daemon`.
+
+**Files Modified**
+
+- `platform/argocd/chaos-mesh-application.yaml`
+- `docs/ai-logs.md`
+
+**Summary**
+
+Kept `chaosDaemon.resourceProfile: light` and added explicit daemon resources:
+`10m` CPU / `32Mi` memory requests and `100m` CPU / `128Mi` memory limits. The
+values are conservative initial bounds based on live daemon usage observed at
+roughly `9Mi` and `16Mi`, with headroom for a controlled experiment. They should
+be tuned after the daemon runs under real chaos workload.
+
+**Validation**
+
+- `kubectl apply --dry-run=server -f platform/argocd/chaos-mesh-application.yaml`
+  passed.
+- `helm template chaos-mesh chaos-mesh/chaos-mesh --version 2.8.3` with the
+  embedded values renders the resources under the `chaos-daemon` container.
+
+**Potential Risks**
+
+The limits are initial guardrails, not final capacity tuning. If Chaos Mesh
+experiments need more daemon memory, raise the limit based on observed live
+usage rather than removing the bound.
+
+---
+
 ### 2026-07-16 00:03
 
 **Agent**

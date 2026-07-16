@@ -46,13 +46,17 @@ spec:
       name: keycloak-db-app
       key: password
   hostname:
-    # Explicit https scheme: Traefik terminates TLS and forwards to Keycloak
-    # over plain HTTP internally, so without a scheme here Keycloak infers the
-    # request's own (http) scheme and mints tokens with iss: http://... while
-    # every resource server validates against the public iss: https://... -
-    # every token gets rejected as invalid_token. Confirmed live via the
-    # realm's discovery document showing issuer: http://g02.cpo2026.it/... .
-    hostname: https://g02.cpo2026.it
+    # Bare hostname, not a full https:// URL: a full URL here makes Keycloak
+    # treat it as the complete frontend base and drop http-relative-path
+    # (verified live - issuer came back as .../realms/eurotransit, missing
+    # /auth, which every backend's issuer-uri requires). The scheme instead
+    # comes from proxy.headers below trusting Traefik's X-Forwarded-Proto -
+    # that's also what fixes the original bug: Traefik terminates TLS and
+    # forwards to Keycloak over plain HTTP internally, so without a trusted
+    # proxy header Keycloak saw its own http request and minted iss: http://...
+    # while every resource server validates against https://... (confirmed
+    # live via the realm's discovery document before this fix).
+    hostname: g02.cpo2026.it
   http:
     httpEnabled: true
   # xforwarded matches Traefik's default X-Forwarded-* headers (not the RFC
@@ -72,6 +76,20 @@ spec:
     # so it's pure overhead. "local" drops the clustering layer entirely.
     - name: cache
       value: local
+    # Without this, only front-channel requests (through Traefik, with
+    # X-Forwarded-Proto) get the correct https issuer above. Backchannel
+    # calls that reach Keycloak directly in-cluster (e.g. Orders' own
+    # client_credentials token fetch via KEYCLOAK_TOKEN_URI, which hits
+    # eurotransit-keycloak-service:8080 with no proxy in front) have no
+    # forwarded header, so Keycloak fell back to the raw connection's
+    # scheme/port and stamped iss: http://g02.cpo2026.it:8080/... instead of
+    # the public https form - every resource server then rejected that
+    # service token as an invalid issuer. Confirmed live 2026-07-16 by
+    # decoding a token minted via the internal token endpoint. false forces
+    # backchannel responses to use the same fixed hostname as the front
+    # channel regardless of how the request arrived.
+    - name: hostname-backchannel-dynamic
+      value: "false"
   bootstrapAdmin:
     user:
       secret: keycloak-admin-credentials
