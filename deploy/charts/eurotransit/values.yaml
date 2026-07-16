@@ -3,7 +3,7 @@ namespace: eurotransit
 # strategies. The safe default keeps the existing Kubernetes Deployment path.
 deploymentStrategies:
   frontend: standard
-  catalog: standard
+  catalog: canary
   orders: standard
 progressiveDelivery:
   # Keep the previous ReplicaSet available for a fast rollback after promotion.
