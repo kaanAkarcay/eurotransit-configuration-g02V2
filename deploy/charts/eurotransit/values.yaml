@@ -128,10 +128,10 @@ catalog:
     # today's CI/CD flow. requireProgressiveDigest already fails the render if
     # this service is switched to canary/blueGreen without a real digest here -
     # populate it only at that point, not as a standing default.
-    digest: "sha256:ced5de4cca061c3bae9f472d568f1351dda5bb8a13c041fa3ed2ddb7207aee20"
+    digest: "sha256:db23f479171eba7065c1c0f7d9b3415d08d96a712ab31ce1094eafb6cec01f1e"
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
-  restartedAt: "2026-07-16T11:15:29Z-f20616d066e198db7d35fa79611a321aa65a5b81"
+  restartedAt: "2026-07-16T16:10:49Z-59297b4a585986357cd44d676a4b778c294eb90d"
   # Re-measured 2026-07-15: actual usage steady at ~264Mi, so 384Mi/768Mi left
   # ~3x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   resources:
