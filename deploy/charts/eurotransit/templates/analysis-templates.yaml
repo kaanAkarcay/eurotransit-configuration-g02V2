@@ -135,7 +135,7 @@ spec:
         prometheus:
           address: {{ $analysis.prometheusAddress }}
           query: |
-            sum(increase(eurotransit_orders_requests_accepted_total{
+            sum(increase(eurotransit_orders_requests_accepted_new_total{
               namespace="{{ .Values.namespace }}",
               service=~"{{`{{args.service-name}}`}}(-canary|-preview)?",
               pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*"
@@ -178,7 +178,7 @@ spec:
               status=~"5..",
               uri!~"/actuator.*"
             }[{{ $analysis.safetyQueryWindow }}]))
-            or (0 * sum(increase(eurotransit_orders_requests_accepted_total{
+            or (0 * sum(increase(eurotransit_orders_requests_accepted_new_total{
               namespace="{{ .Values.namespace }}",
               pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*"
             }[{{ $analysis.safetyQueryWindow }}])))

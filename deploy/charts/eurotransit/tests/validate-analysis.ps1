@@ -132,7 +132,7 @@ $ordersRender = Invoke-HelmTemplate -Arguments @(
 )
 foreach ($required in @(
     'name: eurotransit-orders-revision-health',
-    'eurotransit_orders_requests_accepted_total',
+    'eurotransit_orders_requests_accepted_new_total',
     'eurotransit_orders_persistence_failures_total',
     'eurotransit_orders_outbox_creation_failures_total',
     'failureLimit: 0',
@@ -143,6 +143,10 @@ foreach ($required in @(
     if ($ordersRender -notmatch $required) {
         throw "Orders analysis render is missing '$required'."
     }
+}
+if ($ordersRender -match 'eurotransit_orders_requests_accepted_total' -or
+    $ordersRender -match 'eurotransit_orders_requests_accepted_replayed_total') {
+    throw 'Orders analysis must gate only on newly committed orders, never the legacy aggregate or replay counter.'
 }
 Assert-Rejected 'duration below five minutes' @(
     '--set', 'progressiveDelivery.automatedAnalysis.duration=4m'
