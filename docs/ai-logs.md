@@ -5,6 +5,78 @@ This file records significant AI-assisted development sessions, as required by
 
 ---
 
+### 2026-07-16 15:40
+
+**Agent**
+
+Claude Opus 4.8
+
+**Task**
+
+Two Pillar B documentation tasks: document the CAP/PACELC consistency model, and
+document the three-level idempotency scheme. Both turned out to be largely
+written already, so the work became correcting what had gone stale and filling
+the gaps.
+
+**Files Modified**
+
+- `docs/consistency-validation.md`
+- `docs/dod.md`
+- `docs/ai-logs.md`
+
+**Summary**
+
+CAP/PACELC (§1) rewritten around the scope of the guarantee rather than the
+label. Adds: the system is eventually consistent and strong consistency is
+confined to `seats.available`, because that is the only resource with genuine
+contention; what a partition costs in concrete terms (primary unreachable →
+Inventory 5xx → Orders' breaker → order FAILED, i.e. checkout availability is
+what is traded away); and Catalog as the deliberate AP counterpoint that makes
+the choice meaningful.
+
+Idempotency: added §2.1 for level 1, which had no section at all, and an evidence
+table for Orders, which had none. §2 now covers levels 1 and 2 together since
+they are the same pattern one hop apart. The non-obvious rationales that lived
+only in per-service `CLAUDE.md` files (claim-before-decrement, 409 not memoised,
+`circuit_breaker_open` not memoised) are now in the shared document.
+
+§4 rewritten. Four defects it recorded as blocking are fixed and now covered by
+tests — verified against `origin/main` of the application repo, not assumed:
+`insertIfAbsent` with `ON CONFLICT DO NOTHING` for both `processed_requests` and
+`processed_events`, `reservation_id` in Stage 4's payload, topics from
+`app.kafka.topics.*`, and `insertNew` in place of the String-`@Id` `save()`.
+DoD boxes for idempotency levels 1 and 3, the outbox and the compensation path
+ticked accordingly.
+
+**Potential Risks**
+
+§4 previously claimed the Payments charge-before-write window self-heals via
+Orders' retry. Corrected: `PaymentClient` has no retry and `InventoryClient`'s
+`@Retry` is inert on a suspend function (resilience4j 2.2.0 ships no coroutine
+aspect extension), so nothing re-calls the gateway and the window does not heal.
+The document had been reassuring about a mitigation that does not exist.
+
+Every test name quoted was read from `origin/main`; none was inferred from a
+previous version of this document.
+
+**Confidence**
+
+High on the corrections and the evidence tables — each was verified against the
+application source or the resilience4j jar. Medium on the Catalog framing: the
+code is unambiguous (no Kafka dependency, no write path, read-only repositories,
+`available` seeded and never updated), but calling it a deliberate AP choice
+rather than an unfinished one is an interpretation the team owns.
+
+**Notes**
+
+Two items deliberately left open rather than resolved here. The RTO referenced by
+chaos experiment 5 is stated nowhere, which makes that experiment unfalsifiable;
+it is recorded in §4 with its owner, not invented. The "demonstrated under chaos"
+DoD box stays unticked, and §4 now says why it matters beyond the oversell
+invariant: it is also the only thing that would demonstrate the PC half of PC/EC.
+
+---
+
 ### 2026-07-16 00:24
 
 **Agent**
