@@ -113,6 +113,9 @@ orders:
     limits:
       cpu: 600m
       memory: 600Mi
+  pdb:
+    enabled: true
+    minAvailable: 1
   service:
     type: ClusterIP
     port: 8080
@@ -146,6 +149,16 @@ orders:
           pending-acquire-max-count: 50
           pending-acquire-timeout: 500ms
     resilience4j:
+      timelimiter:
+        instances:
+          inventory-client:
+            # The Orders clients use this property as the Reactor Netty
+            # responseTimeout source; it is not an annotation-only TimeLimiter.
+            timeout-duration: 2s
+          payments-client:
+            # Must exceed Payments' own 5s gateway timeout so Orders does not
+            # abort a call Payments is still working on.
+            timeout-duration: 6s
       bulkhead:
         instances:
           inventory-client:
@@ -226,6 +239,9 @@ inventory:
     limits:
       cpu: "1"
       memory: 550Mi
+  pdb:
+    enabled: true
+    minAvailable: 1
   service:
     type: ClusterIP
     port: 8080
@@ -271,6 +287,9 @@ payments:
     limits:
       cpu: 500m
       memory: 480Mi
+  pdb:
+    enabled: true
+    minAvailable: 1
   service:
     type: ClusterIP
     port: 8080

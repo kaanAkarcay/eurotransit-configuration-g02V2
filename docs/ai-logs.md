@@ -2140,3 +2140,27 @@ until pull-request CI, platform bootstrap and smoke/rollback checks pass.
 The digests were obtained with read-only `kubectl get`. No commit, push, merge,
 image push, Argo CD sync, Helm install/upgrade, or cluster-changing command was
 run.
+# 2026-07-16 - Resilience live-check enablers
+
+Created a fresh branch from `origin/dev` for the remaining live resilience test
+prerequisites: critical-service PDBs, Orders -> Payments chaos validation, and
+Payments -> gateway chaos validation.
+
+Repository changes:
+
+- Added Helm-rendered `policy/v1` PodDisruptionBudgets for Orders, Inventory
+  and Payments, each with `minAvailable: 1`.
+- Added explicit Orders timeout binding under
+  `resilience4j.timelimiter.instances.inventory-client.timeout-duration` and
+  `resilience4j.timelimiter.instances.payments-client.timeout-duration`, because
+  the current Orders clients read those properties for Reactor Netty
+  `responseTimeout`.
+- Added one-shot Chaos Mesh `NetworkChaos` manifests for Orders -> Payments
+  latency and Payments -> payment-gateway-sim latency.
+- Added runbooks documenting prerequisites, load generation, Prometheus
+  queries, success criteria, and rollback.
+
+Important caveat: with the current default `replicaCount: 1`, each new PDB will
+correctly protect the service but report zero allowed disruptions. A real
+node-drain availability proof still needs at least two replicas, either by
+temporary replica overrides or HPA `minReplicas >= 2`.

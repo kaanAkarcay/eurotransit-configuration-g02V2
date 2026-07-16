@@ -1,0 +1,48 @@
+# Purpose: one-shot Chaos Mesh experiment for validating the Payments -> gateway
+# circuit breaker under slow external-gateway behavior.
+# Hypothesis: while payment authorization load is active, adding 3s latency from
+# Payments to payment-gateway-sim makes calls exceed the 2s slow-call threshold,
+# causing the `payment-gateway` circuit breaker to open without relying on hard
+# connection failures.
+# Prerequisites: Chaos Mesh CRDs installed, Payments image with the
+# `payment-gateway` circuit breaker deployed, and payment-gateway-sim running.
+# Metrics: `resilience4j_circuitbreaker_state`, slow/failed/not-permitted call
+# counts for `payment-gateway`, `/api/v1/payments/authorize` statuses and
+# latency, and Payments/payment-gateway-sim pod restart counters.
+# Rollback: this one-shot object has `duration: 60s`; delete it early with
+# `kubectl -n chaos-mesh delete networkchaos payments-gateway-network-latency`.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: payments-gateway-network-latency
+  namespace: chaos-mesh
+  labels:
+    app.kubernetes.io/name: chaos-experiment
+    app.kubernetes.io/part-of: eurotransit
+    eurotransit.io/experiment: payments-gateway-network-latency
+  annotations:
+    eurotransit.io/status: manual
+    eurotransit.io/auto-execute: "false"
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - eurotransit
+    labelSelectors:
+      app.kubernetes.io/name: payments
+      app.kubernetes.io/instance: eurotransit
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - eurotransit
+      labelSelectors:
+        app.kubernetes.io/name: payment-gateway-sim
+        app.kubernetes.io/instance: eurotransit
+  delay:
+    latency: 3s
+    correlation: "100"
+    jitter: 0ms
+  duration: 60s

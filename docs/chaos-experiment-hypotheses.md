@@ -6,11 +6,22 @@ These hypotheses are formulated before the experiments are executed. Each will b
 
 ## Experiment 1: Latency injection on Payments
 
-**Failure mode:** Payments service responds with 3-second delay on all requests.
+**Failure mode:** Orders traffic to Payments is delayed long enough to exceed
+the Orders payment-client timeout.
 
-**Chaos Mesh resource:** NetworkChaos (delay) targeting pods with label `app.kubernetes.io/name: payments`.
+**Chaos Mesh resource:** One-shot NetworkChaos in
+`platform/chaos-mesh/experiments/orders-payments-network-latency.yaml`, delaying
+traffic from pods with label `app.kubernetes.io/name: orders` to pods with label
+`app.kubernetes.io/name: payments`.
 
-**Hypothesis:** When Payments latency exceeds the configured timeout (2s), the circuit breaker on Orders opens within 10 seconds. Orders stops calling Payments and immediately publishes `order-failed` events for new orders. Inventory receives `order-failed` and releases any pending reservations (compensation). Catalog remains completely unaffected because it has no dependency on Payments or Orders. The latency SLO (p99 < 800ms) will be violated for Orders but not for Catalog. The circuit breaker dashboard panel shows the transition from CLOSED → OPEN.
+**Hypothesis:** When Payments latency exceeds the configured Orders timeout
+(`payments-client.timeout-duration: 6s`), the circuit breaker on Orders opens
+after the configured minimum sample size and failure-rate threshold are reached.
+Orders stops waiting on slow Payments calls, uses the payment fallback path for
+affected orders, and publishes failure events that let Inventory release pending
+reservations. Catalog remains unaffected because it has no dependency on
+Payments or Orders. The circuit breaker dashboard panel shows the transition
+CLOSED -> OPEN.
 
 **Steady state:** All SLOs green. Success rate > 99.5%. p99 latency < 800ms. No active alerts. Orders in PENDING reach CONFIRMED within 5 seconds.
 
@@ -20,7 +31,9 @@ These hypotheses are formulated before the experiments are executed. Each will b
 - Grafana: circuit breaker state transitions
 - Alertmanager: burn-rate alert fires for Orders checkout SLO
 
-**Validation criteria:** Circuit breaker opens. No requests hang longer than timeout (2s). Catalog is unaffected. Compensation releases all reservations for failed orders.
+**Validation criteria:** Circuit breaker opens. Calls do not hang beyond the
+configured Orders payment timeout. Catalog is unaffected. Compensation releases
+all reservations for failed orders.
 
 ---
 
@@ -126,3 +139,40 @@ These hypotheses are formulated before the experiments are executed. Each will b
 **Validation criteria:** `inventory-client` transitions CLOSED -> OPEN under confirmed Inventory unavailability only after Orders timeout enforcement exists. If the breaker does not open under a full partition, first diagnose missing timeout, hanging calls, missing samples, or missing Resilience4j wrapping; do not treat that as a reason to lower `failure-rate-threshold`.
 
 Detailed runbook: `docs/resilience/orders-inventory-circuit-breaker-chaos.md`.
+
+---
+
+## Additional targeted experiment: Payments -> Gateway latency
+
+**Failure mode:** Payments pods can reach `payment-gateway-sim`, but gateway
+responses are delayed by 3 seconds.
+
+**Chaos Mesh resource:** One-shot NetworkChaos in
+`platform/chaos-mesh/experiments/payments-gateway-network-latency.yaml`, delaying
+traffic from Payments pods to `payment-gateway-sim`.
+
+**Hypothesis:** Gateway latency above the 2s slow-call threshold causes the
+`payment-gateway` circuit breaker to record slow calls and open after the
+configured sample size and slow-call-rate threshold are reached. Payments keeps
+returning contract-level decline responses instead of surfacing elevated 5xx
+or restarting.
+
+**Steady state:** Payments, `payment-gateway-sim`, PostgreSQL, and Keycloak are
+healthy. Payment authorization load is high enough to produce at least
+`minimum-number-of-calls` inside the circuit-breaker sliding window.
+
+**What we will observe:**
+- Grafana/Prometheus: `payment-gateway` call count exceeds
+  `minimum-number-of-calls`
+- Grafana/Prometheus: slow-call rate rises and the breaker transitions
+  CLOSED -> OPEN
+- Grafana/Prometheus: not-permitted calls appear while the breaker is OPEN
+- Kubernetes: Payments and `payment-gateway-sim` pod restart counters do not
+  increase from liveness churn
+
+**Validation criteria:** `payment-gateway` transitions CLOSED -> OPEN under
+confirmed gateway latency, 5xx remains controlled, and the breaker recovers
+after the fault ends.
+
+Detailed runbook:
+`docs/resilience/payments-gateway-circuit-breaker-chaos.md`.
