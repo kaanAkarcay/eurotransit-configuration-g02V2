@@ -104,29 +104,62 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "enabled",
+            "services",
             "prometheusAddress",
             "duration",
             "interval",
-            "queryWindow",
-            "initialDelay",
             "canaryWeights",
             "minimumRequests",
             "maximumP95LatencySeconds",
             "failureLimit",
             "inconclusiveLimit",
-            "consecutiveErrorLimit"
+            "consecutiveErrorLimit",
+            "postPromotionSafetyMarginSeconds"
           ],
           "properties": {
-            "enabled": { "type": "boolean" },
+            "services": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["frontend", "catalog", "orders", "inventory", "payments"],
+              "properties": {
+                "frontend": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["enabled"],
+                  "properties": { "enabled": { "const": false } }
+                },
+                "catalog": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["enabled"],
+                  "properties": { "enabled": { "type": "boolean" } }
+                },
+                "orders": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["enabled"],
+                  "properties": { "enabled": { "const": false } }
+                },
+                "inventory": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["enabled"],
+                  "properties": { "enabled": { "type": "boolean" } }
+                },
+                "payments": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["enabled"],
+                  "properties": { "enabled": { "type": "boolean" } }
+                }
+              }
+            },
             "prometheusAddress": { "type": "string", "pattern": "^https?://" },
             "duration": { "type": "string", "pattern": "^[1-9][0-9]*[smh]$" },
             "interval": { "type": "string", "pattern": "^[1-9][0-9]*[smh]$" },
-            "queryWindow": { "type": "string", "pattern": "^[1-9][0-9]*[smh]$" },
-            "initialDelay": { "type": "string", "pattern": "^[1-9][0-9]*[smh]$" },
             "canaryWeights": {
               "type": "array",
-              "minItems": 1,
+              "minItems": 2,
               "uniqueItems": true,
               "items": { "type": "integer", "minimum": 1, "maximum": 100 }
             },
@@ -134,7 +167,8 @@
             "maximumP95LatencySeconds": { "type": "number", "exclusiveMinimum": 0 },
             "failureLimit": { "type": "integer", "minimum": 0 },
             "inconclusiveLimit": { "type": "integer", "minimum": 0 },
-            "consecutiveErrorLimit": { "type": "integer", "minimum": 0 }
+            "consecutiveErrorLimit": { "type": "integer", "minimum": 0 },
+            "postPromotionSafetyMarginSeconds": { "type": "integer", "minimum": 1 }
           }
         },
         "blueGreen": {

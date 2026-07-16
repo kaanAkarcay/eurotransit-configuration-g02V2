@@ -7,8 +7,7 @@
 {{- $strategy := include "eurotransit.deploymentStrategy" (dict "root" $root "service" $service.name) | trim -}}
 {{- if ne $strategy "standard" }}
 {{- include "eurotransit.requireProgressiveDigest" (dict "service" $service.name "image" $service.values.image) -}}
-{{- $analysisSupported := eq (include "eurotransit.analysisSupported" (dict "root" $root "service" $service.name) | trim) "true" -}}
-{{- $automated := and $root.Values.progressiveDelivery.automatedAnalysis.enabled $analysisSupported -}}
+{{- $automated := eq (include "eurotransit.analysisEnabled" (dict "root" $root "service" $service.name) | trim) "true" -}}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
@@ -115,7 +114,7 @@ spec:
 {{- range $service := $blueGreenServices }}
 {{- if $service.enabled }}
 {{- include "eurotransit.requireProgressiveDigest" (dict "service" $service.name "image" $service.values.image) -}}
-{{- $automated := $root.Values.progressiveDelivery.automatedAnalysis.enabled -}}
+{{- $automated := eq (include "eurotransit.analysisEnabled" (dict "root" $root "service" $service.name) | trim) "true" -}}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout

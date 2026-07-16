@@ -14,28 +14,49 @@ progressiveDelivery:
   revisionHistoryLimit: 3
   rollbackWindowRevisions: 2
   automatedAnalysis:
-    # Fail-closed operational default. Enable only after Prometheus is running
-    # and the queries below have been verified against live candidate traffic.
-    enabled: false
+    # Every service is fail-closed and opt-in. Frontend and Orders are
+    # deliberately unsupported: Frontend has no revision-attributable request
+    # telemetry, while Orders cannot attribute the complete money path to the
+    # candidate revision. Helm/schema validation rejects attempts to enable them.
+    services:
+      frontend:
+        enabled: false
+      catalog:
+        # Keep disabled until the rendered queries have also been exercised
+        # against a running Prometheus and controlled candidate traffic.
+        enabled: false
+      orders:
+        enabled: false
+      inventory:
+        enabled: false
+      payments:
+        enabled: false
     prometheusAddress: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+    # One analysis stage covers a complete five-minute observation window.
+    # HTTP volume/errors/latency and restarts are evaluated once at the end;
+    # readiness is sampled every interval throughout the same window.
     duration: 5m
     interval: 15s
-    queryWindow: 1m
-    initialDelay: 30s
     canaryWeights:
       - 10
       - 25
       - 50
       - 100
-    # At 60 public requests/minute, a 10% Canary receives about 6/minute.
-    minimumRequests: 5
+    # At 60 public requests/minute, a 10% Canary expects about 30 requests in
+    # five minutes. Requiring 15 tolerates routing variance while rejecting a
+    # statistically empty stage.
+    minimumRequests: 15
     maximumP95LatencySeconds: 0.5
-    failureLimit: 1
-    inconclusiveLimit: 1
-    consecutiveErrorLimit: 1
+    # Fail on the first bad, inconclusive, or provider-error measurement.
+    failureLimit: 0
+    inconclusiveLimit: 0
+    consecutiveErrorLimit: 0
+    # The old active ReplicaSet must outlive post-promotion analysis plus this
+    # explicit allowance for query/provider delay and operator reaction time.
+    postPromotionSafetyMarginSeconds: 600
   blueGreen:
-    # Must remain longer than the complete post-promotion analysis.
-    scaleDownDelaySeconds: 900
+    # 20 minutes: greater than 5m analysis + 10m safety margin.
+    scaleDownDelaySeconds: 1200
 canary:
   frontend:
     host: g02.cpo2026.it

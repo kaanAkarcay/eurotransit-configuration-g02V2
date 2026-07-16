@@ -1,4 +1,6 @@
-{{- if .Values.progressiveDelivery.automatedAnalysis.enabled }}
+{{- include "eurotransit.validateAutomatedAnalysis" . -}}
+{{- $analysis := .Values.progressiveDelivery.automatedAnalysis -}}
+{{- if or $analysis.services.catalog.enabled $analysis.services.inventory.enabled $analysis.services.payments.enabled }}
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:
@@ -13,54 +15,54 @@ spec:
     - name: service-name
     - name: pod-template-hash
   metrics:
+    # These four metrics deliberately run once, after the complete observation
+    # window. A zero/absent request sample fails instead of promoting a quiet
+    # 10% Canary or an unexercised Blue/Green preview.
     - name: candidate-request-volume
-      initialDelay: {{ .Values.progressiveDelivery.automatedAnalysis.initialDelay }}
-      interval: {{ .Values.progressiveDelivery.automatedAnalysis.interval }}
-      count: {{ include "eurotransit.analysisCount" (dict "duration" .Values.progressiveDelivery.automatedAnalysis.duration "interval" .Values.progressiveDelivery.automatedAnalysis.interval) }}
-      failureLimit: {{ .Values.progressiveDelivery.automatedAnalysis.failureLimit }}
-      inconclusiveLimit: {{ .Values.progressiveDelivery.automatedAnalysis.inconclusiveLimit }}
-      consecutiveErrorLimit: {{ .Values.progressiveDelivery.automatedAnalysis.consecutiveErrorLimit }}
-      successCondition: len(result) == 1 && result[0] >= {{ .Values.progressiveDelivery.automatedAnalysis.minimumRequests }}
+      initialDelay: {{ $analysis.duration }}
+      count: 1
+      failureLimit: {{ $analysis.failureLimit }}
+      inconclusiveLimit: {{ $analysis.inconclusiveLimit }}
+      consecutiveErrorLimit: {{ $analysis.consecutiveErrorLimit }}
+      successCondition: len(result) == 1 && result[0] >= {{ $analysis.minimumRequests }}
       provider:
         prometheus:
-          address: {{ .Values.progressiveDelivery.automatedAnalysis.prometheusAddress }}
+          address: {{ $analysis.prometheusAddress }}
           query: |
-            vector(sum(increase(http_server_requests_seconds_count{
+            sum(increase(http_server_requests_seconds_count{
               namespace="{{ .Values.namespace }}",
               service=~"{{`{{args.service-name}}`}}(-canary|-preview)?",
               pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*",
               uri!~"/actuator.*"
-            }[{{ .Values.progressiveDelivery.automatedAnalysis.queryWindow }}])))
+            }[{{ $analysis.duration }}]))
     - name: candidate-http-5xx
-      initialDelay: {{ .Values.progressiveDelivery.automatedAnalysis.initialDelay }}
-      interval: {{ .Values.progressiveDelivery.automatedAnalysis.interval }}
-      count: {{ include "eurotransit.analysisCount" (dict "duration" .Values.progressiveDelivery.automatedAnalysis.duration "interval" .Values.progressiveDelivery.automatedAnalysis.interval) }}
-      failureLimit: {{ .Values.progressiveDelivery.automatedAnalysis.failureLimit }}
-      inconclusiveLimit: {{ .Values.progressiveDelivery.automatedAnalysis.inconclusiveLimit }}
-      consecutiveErrorLimit: {{ .Values.progressiveDelivery.automatedAnalysis.consecutiveErrorLimit }}
+      initialDelay: {{ $analysis.duration }}
+      count: 1
+      failureLimit: {{ $analysis.failureLimit }}
+      inconclusiveLimit: {{ $analysis.inconclusiveLimit }}
+      consecutiveErrorLimit: {{ $analysis.consecutiveErrorLimit }}
       successCondition: len(result) == 1 && result[0] == 0
       provider:
         prometheus:
-          address: {{ .Values.progressiveDelivery.automatedAnalysis.prometheusAddress }}
+          address: {{ $analysis.prometheusAddress }}
           query: |
-            vector(sum(increase(http_server_requests_seconds_count{
+            sum(increase(http_server_requests_seconds_count{
               namespace="{{ .Values.namespace }}",
               service=~"{{`{{args.service-name}}`}}(-canary|-preview)?",
               pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*",
               status=~"5..",
               uri!~"/actuator.*"
-            }[{{ .Values.progressiveDelivery.automatedAnalysis.queryWindow }}])))
+            }[{{ $analysis.duration }}])) or vector(0)
     - name: candidate-p95-latency
-      initialDelay: {{ .Values.progressiveDelivery.automatedAnalysis.initialDelay }}
-      interval: {{ .Values.progressiveDelivery.automatedAnalysis.interval }}
-      count: {{ include "eurotransit.analysisCount" (dict "duration" .Values.progressiveDelivery.automatedAnalysis.duration "interval" .Values.progressiveDelivery.automatedAnalysis.interval) }}
-      failureLimit: {{ .Values.progressiveDelivery.automatedAnalysis.failureLimit }}
-      inconclusiveLimit: {{ .Values.progressiveDelivery.automatedAnalysis.inconclusiveLimit }}
-      consecutiveErrorLimit: {{ .Values.progressiveDelivery.automatedAnalysis.consecutiveErrorLimit }}
-      successCondition: len(result) == 1 && !isNaN(result[0]) && result[0] <= {{ .Values.progressiveDelivery.automatedAnalysis.maximumP95LatencySeconds }}
+      initialDelay: {{ $analysis.duration }}
+      count: 1
+      failureLimit: {{ $analysis.failureLimit }}
+      inconclusiveLimit: {{ $analysis.inconclusiveLimit }}
+      consecutiveErrorLimit: {{ $analysis.consecutiveErrorLimit }}
+      successCondition: len(result) == 1 && !isNaN(result[0]) && result[0] <= {{ $analysis.maximumP95LatencySeconds }}
       provider:
         prometheus:
-          address: {{ .Values.progressiveDelivery.automatedAnalysis.prometheusAddress }}
+          address: {{ $analysis.prometheusAddress }}
           query: |
             histogram_quantile(0.95,
               sum by (le) (rate(http_server_requests_seconds_bucket{
@@ -68,33 +70,36 @@ spec:
                 service=~"{{`{{args.service-name}}`}}(-canary|-preview)?",
                 pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*",
                 uri!~"/actuator.*"
-              }[{{ .Values.progressiveDelivery.automatedAnalysis.queryWindow }}]))
+              }[{{ $analysis.duration }}]))
             )
     - name: candidate-container-restarts
-      interval: {{ .Values.progressiveDelivery.automatedAnalysis.interval }}
-      count: {{ include "eurotransit.analysisCount" (dict "duration" .Values.progressiveDelivery.automatedAnalysis.duration "interval" .Values.progressiveDelivery.automatedAnalysis.interval) }}
-      failureLimit: {{ .Values.progressiveDelivery.automatedAnalysis.failureLimit }}
-      inconclusiveLimit: {{ .Values.progressiveDelivery.automatedAnalysis.inconclusiveLimit }}
-      consecutiveErrorLimit: {{ .Values.progressiveDelivery.automatedAnalysis.consecutiveErrorLimit }}
+      initialDelay: {{ $analysis.duration }}
+      count: 1
+      failureLimit: {{ $analysis.failureLimit }}
+      inconclusiveLimit: {{ $analysis.inconclusiveLimit }}
+      consecutiveErrorLimit: {{ $analysis.consecutiveErrorLimit }}
       successCondition: len(result) == 1 && result[0] == 0
       provider:
         prometheus:
-          address: {{ .Values.progressiveDelivery.automatedAnalysis.prometheusAddress }}
+          address: {{ $analysis.prometheusAddress }}
           query: |
-            vector(sum(increase(kube_pod_container_status_restarts_total{
+            sum(increase(kube_pod_container_status_restarts_total{
               namespace="{{ .Values.namespace }}",
               pod=~"{{`{{args.service-name}}`}}-{{`{{args.pod-template-hash}}`}}-.*"
-            }[{{ .Values.progressiveDelivery.automatedAnalysis.queryWindow }}])))
+            }[{{ $analysis.duration }}]))
+    # Readiness is the only sampled metric. Its first sample occurs after one
+    # interval and its last sample at the end of the same complete window.
     - name: candidate-ready
-      interval: {{ .Values.progressiveDelivery.automatedAnalysis.interval }}
-      count: {{ include "eurotransit.analysisCount" (dict "duration" .Values.progressiveDelivery.automatedAnalysis.duration "interval" .Values.progressiveDelivery.automatedAnalysis.interval) }}
-      failureLimit: {{ .Values.progressiveDelivery.automatedAnalysis.failureLimit }}
-      inconclusiveLimit: {{ .Values.progressiveDelivery.automatedAnalysis.inconclusiveLimit }}
-      consecutiveErrorLimit: {{ .Values.progressiveDelivery.automatedAnalysis.consecutiveErrorLimit }}
+      initialDelay: {{ $analysis.interval }}
+      interval: {{ $analysis.interval }}
+      count: {{ include "eurotransit.analysisCount" (dict "duration" $analysis.duration "interval" $analysis.interval) }}
+      failureLimit: {{ $analysis.failureLimit }}
+      inconclusiveLimit: {{ $analysis.inconclusiveLimit }}
+      consecutiveErrorLimit: {{ $analysis.consecutiveErrorLimit }}
       successCondition: len(result) == 1 && result[0] == 1
       provider:
         prometheus:
-          address: {{ .Values.progressiveDelivery.automatedAnalysis.prometheusAddress }}
+          address: {{ $analysis.prometheusAddress }}
           query: |
             min(kube_pod_status_ready{
               namespace="{{ .Values.namespace }}",
