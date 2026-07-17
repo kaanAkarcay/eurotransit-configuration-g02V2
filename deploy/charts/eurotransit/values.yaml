@@ -271,9 +271,9 @@ inventory:
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
-    digest: "sha256:cd7418c37754c31c7745074e407dcecd97d67c9fc2b5b541ed93a7280ca08227"
+    digest: "sha256:6630d759b681bc4b9132334bc6cedb5491a84ae24dab2303a5d1190f7a15e7e8"
     pullPolicy: Always
-  restartedAt: "2026-07-17T00:26:44Z-a72add1a77787efb99c89066b4e924a197cfcb2d"
+  restartedAt: "2026-07-17T08:51:45Z-fda4b701ed6a4c8c67d77d0c68d6f81fd5b205b8"
   # Re-measured 2026-07-15: actual usage steady at ~294Mi, so 400Mi/800Mi left
   # ~2.7x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   # CPU untouched - the HPA's targetCPUUtilizationPercentage needs a stable
