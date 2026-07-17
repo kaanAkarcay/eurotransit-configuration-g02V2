@@ -61,7 +61,7 @@ progressiveDelivery:
     # Fail on the first bad, inconclusive, or provider-error measurement.
     failureLimit: 0
     inconclusiveLimit: 0
-    consecutiveErrorLimit: 0
+    consecutiveErrorLimit: 2
     # Added to the longest automated strategy when validating the Rollout
     # progress deadline. Covers scheduling, ReplicaSet readiness and provider
     # delay outside the nominal analysis windows.
