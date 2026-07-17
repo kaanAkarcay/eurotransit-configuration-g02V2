@@ -380,7 +380,7 @@ payment-gateway-sim:
     repository: eurotransitdemo2registry.azurecr.io/eurotransit/payment-gateway-sim
     tag: latest
     pullPolicy: Always
-  restartedAt: "2026-07-17T00:26:16Z-a72add1a77787efb99c89066b4e924a197cfcb2d"
+  restartedAt: "2026-07-17T11:32:43Z-b751fb1a1eb76126495349a34e2e467d036c9d80"
   # No resources declared previously - BestEffort QoS, invisible to the
   # scheduler's placement math despite steady real usage (~216Mi). Found
   # during the 2026-07-15 end-to-end memory audit; same root cause as every
