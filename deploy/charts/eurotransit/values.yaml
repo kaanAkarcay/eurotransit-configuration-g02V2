@@ -124,10 +124,10 @@ catalog:
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
-    digest: "sha256:1bf540a121852b985a351eeb6b0830bfe75fd660d4674fed74e0ae57c0520aff"
+    digest: "sha256:d07228c7f3b1f08b5bba716c833437e0e656c2af511f2ffe493848c8159e4454"
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
-  restartedAt: "2026-07-17T00:25:55Z-a72add1a77787efb99c89066b4e924a197cfcb2d"
+  restartedAt: "2026-07-17T08:51:14Z-fda4b701ed6a4c8c67d77d0c68d6f81fd5b205b8"
   # Re-measured 2026-07-15: actual usage steady at ~264Mi, so 384Mi/768Mi left
   # ~3x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   resources:
