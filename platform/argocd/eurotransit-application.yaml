@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/CPO-G02/eurotransit-configuration-g02
+    repoURL: https://github.com/kaanAkarcay/eurotransit-configuration-g02V2
     targetRevision: main
     path: deploy/charts/eurotransit
   destination:

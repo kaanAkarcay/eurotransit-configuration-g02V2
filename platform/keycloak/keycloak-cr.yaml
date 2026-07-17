@@ -56,7 +56,7 @@ spec:
     # proxy header Keycloak saw its own http request and minted iss: http://...
     # while every resource server validates against https://... (confirmed
     # live via the realm's discovery document before this fix).
-    hostname: g02.cpo2026.it
+    hostname: eurotransit-demo2.spaincentral.cloudapp.azure.com
   http:
     httpEnabled: true
   # xforwarded matches Traefik's default X-Forwarded-* headers (not the RFC
@@ -82,7 +82,7 @@ spec:
     # client_credentials token fetch via KEYCLOAK_TOKEN_URI, which hits
     # eurotransit-keycloak-service:8080 with no proxy in front) have no
     # forwarded header, so Keycloak fell back to the raw connection's
-    # scheme/port and stamped iss: http://g02.cpo2026.it:8080/... instead of
+    # scheme/port and stamped iss: http://eurotransit-demo2.spaincentral.cloudapp.azure.com:8080/... instead of
     # the public https form - every resource server then rejected that
     # service token as an invalid issuer. Confirmed live 2026-07-16 by
     # decoding a token minted via the internal token endpoint. false forces

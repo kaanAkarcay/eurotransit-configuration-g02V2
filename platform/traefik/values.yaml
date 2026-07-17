@@ -6,19 +6,18 @@ providers:
 service:
   type: LoadBalancer
   annotations:
-    # Reclaimed the ORIGINAL label "g02-entrypoint" (2026-07-13): the Public
-    # IP that had it reserved belonged to an unrelated old personal Azure lab
-    # subscription and was deleted, freeing the label (confirmed via Azure's
-    # CheckDnsNameAvailability API). Reusing it instead of "g02-entrypoint-2026"
-    # because OVH's existing CNAME for g02.cpo2026.it (outside Azure entirely -
-    # confirmed via `dig cpo2026.it NS`) already targets
-    # g02-entrypoint.polandcentral.cloudapp.azure.com - this makes the
-    # existing OVH record correct with no OVH-side change needed. Pinned to
-    # the same, already-working Public IP/resource-group explicitly so a
-    # future reconciliation or cluster restart can't drift onto a new IP.
-    service.beta.kubernetes.io/azure-dns-label-name: g02-entrypoint
-    service.beta.kubernetes.io/azure-load-balancer-resource-group: MC_G_06_Lab02cluster_polandcentral
-    service.beta.kubernetes.io/azure-pip-name: kubernetes-a18745822eff349198a98b394c413147
+    # V2 clone cluster (Eurotransit-demo2): using the default Azure-assigned
+    # hostname directly instead of a custom domain, specifically to avoid the
+    # DNS-drift incident class documented in
+    # docs/azure-public-ip-root-cause-2026-07-13.md /
+    # docs/ingress-incident-report-2026-07-13.md - that incident's actual root
+    # cause was Traefik's Service never being pinned to a named, persistent
+    # Public IP, so AKS was free to reassign a new IP/label on reconciliation.
+    # Pre-created a static Public IP up front and pinned all three annotations
+    # to it so a future Service/cluster recreation can't drift.
+    service.beta.kubernetes.io/azure-dns-label-name: eurotransit-demo2
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: MC_Eurotransit_Eurotransit-demo2_spaincentral
+    service.beta.kubernetes.io/azure-pip-name: pip-traefik-eurotransit
 
 # traefik-41.0.2's own chart templates read `log:`/`accessLog:`, not
 # `logs.general`/`logs.access` - the latter is silently ignored by Helm

@@ -74,15 +74,15 @@ progressiveDelivery:
     scaleDownDelaySeconds: 1200
 canary:
   frontend:
-    host: g02.cpo2026.it
+    host: eurotransit-demo2.spaincentral.cloudapp.azure.com
     path: /
     initialWeight: 10
   catalog:
-    host: g02.cpo2026.it
+    host: eurotransit-demo2.spaincentral.cloudapp.azure.com
     path: /api/v1/catalog
     initialWeight: 10
   orders:
-    host: g02.cpo2026.it
+    host: eurotransit-demo2.spaincentral.cloudapp.azure.com
     path: /api/v1/orders
     initialWeight: 10
 # Inventory and Payments support Blue/Green only, so a boolean is sufficient.
@@ -95,7 +95,7 @@ blueGreen:
 frontend:
   replicaCount: 1
   image:
-    repository: lab02clusterregistry.azurecr.io/eurotransit/frontend
+    repository: eurotransitdemo2registry.azurecr.io/eurotransit/frontend
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
@@ -120,7 +120,7 @@ frontend:
 catalog:
   replicaCount: 1
   image:
-    repository: lab02clusterregistry.azurecr.io/eurotransit/catalog
+    repository: eurotransitdemo2registry.azurecr.io/eurotransit/catalog
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
@@ -143,7 +143,7 @@ catalog:
 orders:
   replicaCount: 1
   image:
-    repository: lab02clusterregistry.azurecr.io/eurotransit/orders
+    repository: eurotransitdemo2registry.azurecr.io/eurotransit/orders
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
@@ -267,7 +267,7 @@ orders:
 inventory:
   replicaCount: 1
   image:
-    repository: lab02clusterregistry.azurecr.io/eurotransit/inventory
+    repository: eurotransitdemo2registry.azurecr.io/eurotransit/inventory
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
@@ -315,7 +315,7 @@ inventory:
 payments:
   replicaCount: 1
   image:
-    repository: lab02clusterregistry.azurecr.io/eurotransit/payments
+    repository: eurotransitdemo2registry.azurecr.io/eurotransit/payments
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
@@ -377,7 +377,7 @@ payments:
 payment-gateway-sim:
   replicaCount: 1
   image:
-    repository: lab02clusterregistry.azurecr.io/eurotransit/payment-gateway-sim
+    repository: eurotransitdemo2registry.azurecr.io/eurotransit/payment-gateway-sim
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-17T00:26:16Z-a72add1a77787efb99c89066b4e924a197cfcb2d"
@@ -405,7 +405,7 @@ payment-gateway-sim:
 notifications:
   replicaCount: 1
   image:
-    repository: lab02clusterregistry.azurecr.io/eurotransit/notifications
+    repository: eurotransitdemo2registry.azurecr.io/eurotransit/notifications
     tag: latest
     pullPolicy: Always
   restartedAt: "2026-07-17T00:26:05Z-a72add1a77787efb99c89066b4e924a197cfcb2d"
@@ -447,7 +447,7 @@ zipkin:
 imagePullSecrets:
   - name: acr-secret
 keycloak:
-  issuerUri: https://g02.cpo2026.it/auth/realms/eurotransit
+  issuerUri: https://eurotransit-demo2.spaincentral.cloudapp.azure.com/auth/realms/eurotransit
   tokenUri: http://eurotransit-keycloak-service:8080/auth/realms/eurotransit/protocol/openid-connect/token
   jwkSetUri: http://eurotransit-keycloak-service:8080/auth/realms/eurotransit/protocol/openid-connect/certs
 cluster:
