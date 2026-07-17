@@ -99,10 +99,10 @@ frontend:
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
-    digest: "sha256:2f613add68ad41619353bf6d8cd9ac7843aa96629aff170dcdacdf4492d540c5"
+    digest: "sha256:e5a6cd551aa352f392406eeee142054c7b64491dd4b2e44cc4b1745d003f626c"
     pullPolicy: Always
   # CI updates this for pod-template traceability and standard rollouts.
-  restartedAt: "2026-07-16T21:48:21Z-e8addc9b7656dc6be1dcb24bd4d7866a85702636"
+  restartedAt: "2026-07-17T11:30:31Z-b751fb1a1eb76126495349a34e2e467d036c9d80"
   # Static nginx, tiny footprint. Set explicitly - an unset resources block
   # leaves the pod BestEffort, invisible to the scheduler's placement math,
   # which is exactly what let every app service pile onto one already-full
