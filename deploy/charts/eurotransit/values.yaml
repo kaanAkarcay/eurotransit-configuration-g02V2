@@ -319,9 +319,9 @@ payments:
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
-    digest: "sha256:2462baf3abde3c1c75da92cb28f59dd6bdcb9a79a1da2d46c96391270bef8f55"
+    digest: "sha256:9e6782856ebd48eb7fa86aaeeee3e25e5fb89b24ba8ec36d39c78ec3bc7fc06a"
     pullPolicy: Always
-  restartedAt: "2026-07-17T00:26:30Z-a72add1a77787efb99c89066b4e924a197cfcb2d"
+  restartedAt: "2026-07-17T11:33:15Z-b751fb1a1eb76126495349a34e2e467d036c9d80"
   # Re-measured 2026-07-15: actual usage steady at ~251Mi, so 384Mi/768Mi left
   # ~3x headroom unused on capacity-starved nodes. Trimmed to ~1.9x actual.
   resources:
