@@ -147,9 +147,9 @@ orders:
     tag: latest
     # Progressive workloads are pinned to an immutable registry digest. CI
     # replaces this only after pushing and independently verifying the image.
-    digest: "sha256:6875935907f44c2ce02c2c94b92b2b9bea277d5941885f256ce8c23e4cd81dee"
+    digest: "sha256:ce807d99df0d34dcab52bece71350b855b69ac271a15ece2e16a2e5ab9090fd7"
     pullPolicy: Always
-  restartedAt: "2026-07-16T23:06:14Z-76a54112887a63845489d6605b6fd3d3a2b35ed2"
+  restartedAt: "2026-07-17T00:27:19Z-a72add1a77787efb99c89066b4e924a197cfcb2d"
   # Re-measured 2026-07-15: actual usage steady at ~315Mi (highest of the 5,
   # matches it running 4 Kafka consumers plus the outbox poller on top of its
   # own HTTP handler). Trimmed from 400Mi/800Mi, kept more headroom than its
